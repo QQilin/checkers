@@ -1,5 +1,6 @@
 ﻿#include <iostream>
 #include <queue>
+//#include <ctime>
 
 using namespace std;
 
@@ -31,6 +32,7 @@ ebit mask, buf64No2;
 bool isQueenTurn;
 ebit turnLeftUp64, turnLeftDown64, turnRightUp64, turnRightDown64, possibleLeftUp64, possibleLeftDown64, possibleRightUp64, possibleRightDown64;
 unsigned char counter;
+bool isTurn;
 
 struct pos {
 	board possingle;
@@ -42,11 +44,6 @@ struct pos {
 		posemptys = a;
 	}
 };
-
-ebit to64(board thisBoard) {
-	buf64 = thisBoard;
-	return (buf64 << 32) & bit8y57 | buf64 & bit8y04;
-}
 
 struct pos64 {
 	ebit possingle;
@@ -67,8 +64,9 @@ struct pos64 {
 	}
 };
 
-const  board buffersize = 67108864;
-board cash[buffersize][4];
+const  board buffersize = 1024 * 1024 * 80;
+board cache[buffersize][4];
+unsigned char deep[buffersize];
 //0 - все шашки белых
 //1 - все шашки чёхных
 //2 - все простые шашки белых
@@ -80,8 +78,161 @@ unsigned char act; //Содержит предыдущую активную ст
 //0 сейчас ход чёрных
 queue<pos> turns;
 queue<pos64> qturns;
-pos current;
-pos64 current64;
+pos current(possibleLeftUp, possibleLeftUp, possibleLeftUp);
+pos64 current64(possibleLeftUp, possibleLeftUp, possibleLeftUp);
+
+int i;
+string mas[32];
+bool ko;
+
+void show(int caseis) {
+	board bbb = 1;
+	bbb = bbb << caseis;
+	if (bbb & cache[i][0]) {
+		if (bbb & cache[i][2]) {
+			if (ko || mas[caseis] == " 1 " || mas[caseis] == "(1)") {
+				mas[caseis] = " 1 ";
+			}
+			else {
+				mas[caseis] = "(1)";
+			}
+		}
+		else {
+			if (ko || mas[caseis] == " 3 " || mas[caseis] == "(3)") {
+				mas[caseis] = " 3 ";
+			}
+			else {
+				mas[caseis] = "(3)";
+			}
+		}
+	}
+	if (bbb & cache[i][1]) {
+		if (bbb & cache[i][3]) {
+			if (ko || mas[caseis] == " 2 " || mas[caseis] == "(2)") {
+				mas[caseis] = " 2 ";
+			}
+			else {
+				mas[caseis] = "(2)";
+			}
+		}
+		else {
+			if (ko || mas[caseis] == " 4 " || mas[caseis] == "(4)") {
+				mas[caseis] = " 4 ";
+			}
+			else {
+				mas[caseis] = "(4)";
+			}
+		}
+	}
+	if (!(bbb & cache[i][1]) && !(bbb & cache[i][0])) {
+		if (ko || mas[caseis] == " 0 " || mas[caseis] == "(0)") {
+			mas[caseis] = " 0 ";
+		}
+		else {
+			mas[caseis] = "(0)";
+		}
+	}
+	cout << mas[caseis];
+}
+
+bool showall() {
+	if (cache[i][0] == 0) {
+		cout << "Black win" << endl << endl;
+		return true;
+	}
+	if (cache[i][1] == 0) {
+		cout << "White win" << endl << endl;
+		return true;
+	}
+	cout << "   ";
+	show(31);
+	cout << "   ";
+	show(5);
+	cout << "   ";
+	show(11);
+	cout << "   ";
+	show(17);
+	cout << endl;
+	show(24);
+	cout << "   ";
+	show(30);
+	cout << "   ";
+	show(4);
+	cout << "   ";
+	show(10);
+	cout << "   ";
+	cout << endl;
+
+	cout << "   ";
+	show(23);
+	cout << "   ";
+	show(29);
+	cout << "   ";
+	show(3);
+	cout << "   ";
+	show(9);
+	cout << endl;
+	show(16);
+	cout << "   ";
+	show(22);
+	cout << "   ";
+	show(28);
+	cout << "   ";
+	show(2);
+	cout << "   ";
+	cout << endl;
+
+	cout << "   ";
+	show(15);
+	cout << "   ";
+	show(21);
+	cout << "   ";
+	show(27);
+	cout << "   ";
+	show(1);
+	cout << endl;
+	show(8);
+	cout << "   ";
+	show(14);
+	cout << "   ";
+	show(20);
+	cout << "   ";
+	show(26);
+	cout << "   ";
+	cout << endl;
+
+	cout << "   ";
+	show(7);
+	cout << "   ";
+	show(13);
+	cout << "   ";
+	show(19);
+	cout << "   ";
+	show(25);
+	cout << endl;
+	show(0);
+	cout << "   ";
+	show(6);
+	cout << "   ";
+	show(12);
+	cout << "   ";
+	show(18);
+	cout << "   ";
+	cout << endl << endl;
+	return false;
+}
+
+void showNode(board lastn, board firstn) {
+	i = lastn;
+	ko = false;
+	while (i > firstn) {
+		if (i == lastn)
+			ko = true;
+		cout << i << endl;
+		ko = showall();
+		i = parent[i];
+	}		
+}
 
 void getQueenTurn() {
 	current64 = qturns.front();
@@ -139,15 +290,17 @@ void getQueenTurn() {
 		getQueenTurn();
 	}
 	else {
-		cash[last][1 ^ act] = cash[first][1 ^ act] & ~to32(current64.posemptys) | to32(current64.possingle);
-		cash[last][act] = cash[first][act] & ~to32(current64.posemptys);
-		cash[last][3 ^ act] = cash[first][3 ^ act] & ~to32(current64.posemptys) ^ to32(current64.possingle);
-		cash[last][2 | act] = cash[first][2 | act] & ~to32(current64.posemptys);
+		cache[last][1 ^ act] = cache[first][1 ^ act] & ~to32(current64.posemptys) | to32(current64.possingle);
+		cache[last][act] = cache[first][act] & to32(current64.posenemy);
+		cache[last][3 ^ act] = cache[first][3 ^ act] & ~(to32(current64.posemptys) | to32(current64.possingle));
+		cache[last][2 | act] = cache[first][2 | act] & to32(current64.posenemy);
 		parent[last] = first;
 		active[last] = 1 ^ act;
+		deep[last] = deep[first] + 1;
 		last++;
-		if (!qturns.empty())
+		if (!qturns.empty()) {
 			getQueenTurn();
+		}
 	}
 }
 
@@ -160,48 +313,59 @@ void next() {
 	tryRightUp = ((buf32 << 7) | (buf32 >> 25)) & current.posemptys;
 	buf32 = ((current.possingle & possibleLeftDown) >> 7 | (current.possingle & possibleLeftDown) << 25) & current.posenemy;
 	tryLeftDown = ((buf32 >> 7) | (buf32 << 25)) & current.posemptys;
+	isTurn = false;
 	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
 		if (tryLeftUp) {
 			if (act && (current.possingle & maxLeftUp)) {
+				isQueenTurn = true;
 				qturns.push(pos64(current.possingle << 2, current.posenemy & ~(current.possingle << 1), current.posemptys | current.possingle));
 			}
 			else {
+				isTurn = true;
 				turns.push(pos(current.possingle << 2, current.posenemy & ~(current.possingle << 1), current.posemptys | current.possingle));
 			}
 		}
 		if (tryLeftDown) {
 			if (!act && (current.possingle & maxLeftDown)) {
+				isQueenTurn = true;
 				qturns.push(pos64((current.possingle >> 14) | (current.possingle << 18), current.posenemy & ~((current.possingle >> 7) | (current.possingle << 25)), current.posemptys | current.possingle));
 			}
 			else {
+				isTurn = true;
 				turns.push(pos((current.possingle >> 14) | (current.possingle << 18), current.posenemy & ~((current.possingle >> 7) | (current.possingle << 25)), current.posemptys | current.possingle));
 			}
 		}
 		if (tryRightDown) {
 			if (!act && (current.possingle & maxRightDown)) {
+				isQueenTurn = true;
 				qturns.push(pos64(current.possingle >> 2, current.posenemy & ~(current.possingle >> 1), current.posemptys | current.possingle));
 			}
 			else {
+				isTurn = true;
 				turns.push(pos(current.possingle >> 2, current.posenemy & ~(current.possingle >> 1), current.posemptys | current.possingle));
 			}
 		}
 		if (tryRightUp) {
 			if (act && (current.possingle & maxRightUp)) {
+				isQueenTurn = true;
 				qturns.push(pos64((current.possingle << 14) | (current.possingle >> 18), current.posenemy & ~((current.possingle << 7) | (current.possingle >> 25)), current.posemptys | current.possingle));
 			}
 			else {
+				isTurn = true;
 				turns.push(pos((current.possingle << 14) | (current.possingle >> 18), current.posenemy & ~((current.possingle << 7) | (current.possingle >> 25)), current.posemptys | current.possingle));
 			}
 		}
-		next();
+		if (isTurn)
+			next();
 	}
 	else {
-		cash[last][act & 3] = current.possingle | cash[first][act & 3] & ~current.posemptys;
-		cash[last][act] = current.possingle | cash[first][act] & ~current.posemptys;
-		cash[last][act ^ 1] = cash[first][act ^ 1] & ~current.posemptys;
-		cash[last][act ^ 3] = cash[first][act ^ 3] & ~current.posemptys;
+		cache[last][act ^ 3] = current.possingle | cache[first][act ^ 3] & ~current.posemptys;
+		cache[last][act] = cache[first][act] & current.posenemy;
+		cache[last][act ^ 1] = current.possingle | cache[first][act ^ 1] & ~current.posemptys;
+		cache[last][act | 2] = cache[first][act | 2] & current.posenemy;
 		parent[last] = first;
 		active[last] = act ^ 1;
+		deep[last] = deep[first] + 1;
 		last++;
 		if (!turns.empty()) {
 			next();
@@ -211,15 +375,15 @@ void next() {
 
 void getTurn() {
 	act = active[first];
-	enemy = cash[first][act];
-	if (enemy == 0) {
+	singles = cache[first][act ^ 3];
+	if (singles == 0) {
 		first++;
 		return;
 	}
-	singles = cash[first][act ^ 3];
-	all = cash[first][0] | cash[first][1];
+	enemy = cache[first][act];
+	all = cache[first][0] | cache[first][1];
 	emptys = ~all;
-	queens = cash[first][act ^ 1] ^ singles;
+	queens = cache[first][act ^ 1] ^ singles;
 	isQueenTurn = false;
 	tryLeftUp = (((singles & possibleLeftUp) << 1 & enemy) << 1) & emptys;
 	tryRightDown = (((singles & possibleRightDown) >> 1 & enemy) >> 1) & emptys;
@@ -303,18 +467,21 @@ void getTurn() {
 			buf64 = (buf64 & possibleLeftDown64  & emptys64) << 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
 		}
 	}
+	isTurn = false;
 	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown || isQueenTurn) {
 		if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
 			if (tryLeftUp) {
 				if (act) {
 					buf = tryLeftUp & maxLeftUpEndTurn;
-					tryLeftUp ^= maxLeftUpEndTurn;
+					tryLeftUp ^= buf;
+					isQueenTurn = isQueenTurn || buf;
 					while (buf) {
 						buf32 = buf ^ (buf & (buf - 1));
 						qturns.push(pos64(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
 						buf &= buf - 1;
 					}
 				}
+				isTurn = isTurn || tryLeftUp;
 				while (tryLeftUp) {
 					buf32 = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
 					turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
@@ -324,29 +491,33 @@ void getTurn() {
 			if (tryRightDown) {
 				if (!act) {
 					buf = tryRightDown & maxRightDownEndTurn;
-					tryRightDown ^= maxRightDownEndTurn;
+					tryRightDown ^= buf;
+					isQueenTurn = isQueenTurn || buf;
 					while (buf) {
 						buf32 = buf ^ (buf & (buf - 1));
-						qturns.push(pos64(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+						qturns.push(pos64(buf32, enemy & ~(buf32 << 1), emptys | buf32 << 2));
 						buf &= buf - 1;
 					}
 				}
+				isTurn = isTurn || tryRightDown;
 				while (tryRightDown) {
 					buf32 = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
-					turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+					turns.push(pos(buf32, enemy & ~(buf32 << 1), emptys | buf32 << 2));
 					tryRightDown &= tryRightDown - 1;
 				}
 			}
 			if (tryLeftDown) {
 				if (!act) {
 					buf = tryLeftDown & maxLeftDownEndTurn;
-					tryLeftDown ^= maxLeftDownEndTurn;
+					tryLeftDown ^= buf;
+					isQueenTurn = isQueenTurn || buf;
 					while (buf) {
 						buf32 = buf ^ (buf & (buf - 1));
 						qturns.push(pos64(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
 						buf &= buf - 1;
 					}
 				}
+				isTurn = isTurn || tryLeftDown;
 				while (tryLeftDown) {
 					buf32 = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
 					turns.push(pos(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
@@ -356,23 +527,27 @@ void getTurn() {
 			if (tryRightUp) {
 				if (act) {
 					buf = tryRightUp & maxRightUpEndTurn;
-					tryRightUp ^= maxRightUpEndTurn;
+					tryRightUp ^= buf;
+					isQueenTurn = isQueenTurn || buf;
 					while (buf) {
 						buf32 = buf ^ (buf & (buf - 1));
 						qturns.push(pos64(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
 						buf &= buf - 1;
 					}
 				}
+				isTurn = isTurn || tryRightUp;
 				while (tryRightUp) {
 					buf32 = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
 					turns.push(pos(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
 					tryRightUp &= tryRightUp - 1;
 				}
 			}
-			next();
+			if (isTurn)
+				next();
 		}
-		if (isQueenTurn || !qturns.empty())
+		if (isQueenTurn) {
 			getQueenTurn();
+		}
 	}
 	else {
 		if (queens) {
@@ -383,12 +558,13 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					cash[last][2] = cash[first][2];
-					cash[last][3] = cash[first][3];
-					cash[last][act] = cash[first][act];
-					cash[last][1 ^ act] = (cash[first][1 ^ act] | to32(mask)) & ~to32(mask >> counter);
+					cache[last][2] = cache[first][2];
+					cache[last][3] = cache[first][3];
+					cache[last][act] = cache[first][act];
+					cache[last][1 ^ act] = (cache[first][1 ^ act] | to32(mask)) & ~to32(mask >> counter);
 					parent[last] = first;
 					active[last] = 1 ^ act;
+					deep[last] = deep[first] + 1;
 					last++;
 					bitTry &= bitTry - 1;
 				} while (bitTry);
@@ -402,12 +578,13 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					cash[last][2] = cash[first][2];
-					cash[last][3] = cash[first][3];
-					cash[last][act] = cash[first][act];
-					cash[last][1 ^ act] = (cash[first][1 ^ act] | to32(mask)) & ~to32(mask << counter);
+					cache[last][2] = cache[first][2];
+					cache[last][3] = cache[first][3];
+					cache[last][act] = cache[first][act];
+					cache[last][1 ^ act] = (cache[first][1 ^ act] | to32(mask)) & ~to32(mask << counter);
 					parent[last] = first;
 					active[last] = 1 ^ act;
+					deep[last] = deep[first] + 1;
 					last++;
 					bitTry &= bitTry - 1;
 				} while (bitTry);
@@ -421,12 +598,13 @@ void getTurn() {
 				bitTry = buf64; 
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					cash[last][2] = cash[first][2];
-					cash[last][3] = cash[first][3];
-					cash[last][act] = cash[first][act];
-					cash[last][1 ^ act] = (cash[first][1 ^ act] | to32(mask)) & ~to32(mask << counter);
+					cache[last][2] = cache[first][2];
+					cache[last][3] = cache[first][3];
+					cache[last][act] = cache[first][act];
+					cache[last][1 ^ act] = (cache[first][1 ^ act] | to32(mask)) & ~to32(mask << counter);
 					parent[last] = first;
 					active[last] = 1 ^ act;
+					deep[last] = deep[first] + 1;
 					last++;
 					bitTry &= bitTry - 1;
 				} while (bitTry);
@@ -440,12 +618,13 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					cash[last][2] = cash[first][2];
-					cash[last][3] = cash[first][3];
-					cash[last][act] = cash[first][act];
-					cash[last][1 ^ act] = (cash[first][1 ^ act] | to32(mask)) & ~to32(mask >> counter);
+					cache[last][2] = cache[first][2];
+					cache[last][3] = cache[first][3];
+					cache[last][act] = cache[first][act];
+					cache[last][1 ^ act] = (cache[first][1 ^ act] | to32(mask)) & ~to32(mask >> counter);
 					parent[last] = first;
 					active[last] = 1 ^ act;
+					deep[last] = deep[first] + 1;
 					last++;
 					bitTry &= bitTry - 1;
 				} while (bitTry);
@@ -459,12 +638,13 @@ void getTurn() {
 			while (tryLeftUp)
 			{
 				buf = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
-				cash[last][0] = (cash[first][0] | buf) & ~(buf >> 1);
-				cash[last][2] = (cash[first][2] | buf) & ~(buf >> 1);
-				cash[last][1] = cash[first][1];
-				cash[last][3] = cash[first][3];
+				cache[last][0] = (cache[first][0] | buf) & ~(buf >> 1);
+				cache[last][2] = (cache[first][2] | buf) & ~(buf >> 1);
+				cache[last][1] = cache[first][1];
+				cache[last][3] = cache[first][3];
 				parent[last] = first;
 				active[last] = 0;
+				deep[last] = deep[first] + 1;
 				last++;
 				tryLeftUp &= tryLeftUp - 1;
 			}
@@ -473,12 +653,13 @@ void getTurn() {
 			while (tryRightUp)
 			{
 				buf = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
-				cash[last][0] = (cash[first][0] | buf) & ~(buf >> 7 | buf << 25);
-				cash[last][2] = (cash[first][2] | buf) & ~(buf >> 7 | buf << 25);
-				cash[last][1] = cash[first][1];
-				cash[last][3] = cash[first][3];
+				cache[last][0] = (cache[first][0] | buf) & ~(buf >> 7 | buf << 25);
+				cache[last][2] = (cache[first][2] | buf) & ~(buf >> 7 | buf << 25);
+				cache[last][1] = cache[first][1];
+				cache[last][3] = cache[first][3];
 				parent[last] = first;
 				active[last] = 0;
+				deep[last] = deep[first] + 1;
 				last++;
 				tryRightUp &= tryRightUp - 1;
 			}
@@ -489,12 +670,13 @@ void getTurn() {
 			while (tryRightDown)
 			{
 				buf = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
-				cash[last][1] = (cash[first][1] | buf) & ~(buf << 1);
-				cash[last][3] = (cash[first][3] | buf) & ~(buf << 1);
-				cash[last][0] = cash[first][0];
-				cash[last][2] = cash[first][2];
+				cache[last][1] = (cache[first][1] | buf) & ~(buf << 1);
+				cache[last][3] = (cache[first][3] | buf) & ~(buf << 1);
+				cache[last][0] = cache[first][0];
+				cache[last][2] = cache[first][2];
 				parent[last] = first;
 				active[last] = 1;
+				deep[last] = deep[first] + 1;
 				last++;
 				tryRightDown &= tryRightDown - 1;
 			}
@@ -503,26 +685,37 @@ void getTurn() {
 			while (tryLeftDown)
 			{
 				buf = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
-				cash[last][1] = (cash[first][1] | buf) & ~(buf << 7 | buf >> 25);
-				cash[last][3] = (cash[first][3] | buf) & ~(buf << 7 | buf >> 25);
-				cash[last][0] = cash[first][0];
-				cash[last][2] = cash[first][2];
+				cache[last][1] = (cache[first][1] | buf) & ~(buf << 7 | buf >> 25);
+				cache[last][3] = (cache[first][3] | buf) & ~(buf << 7 | buf >> 25);
+				cache[last][0] = cache[first][0];
+				cache[last][2] = cache[first][2];
 				parent[last] = first;
 				active[last] = 1;
+				deep[last] = deep[first] + 1;
 				last++;
 				tryLeftDown &= tryLeftDown - 1;
 			}
 		}
 		if (!isQueenTurn) { //нельзя походить
-			cash[last][act] = 0;
+			cache[last][act] = 1;
+			cache[last][act ^ 1] = 0;
 			parent[last] = first;
 			active[last] = 1 ^ act;
+			deep[last] = deep[first] + 1;
 			last++;
 		}
 	}
 	first++;
 }
 
+board rit(board a) {
+	board rez = 0;
+	for (int i = 0; i < 32; i++) {
+		if (a & square[i])
+			rez = rez | square[32 - i];
+	}
+	return rez;
+}
 void main() {
 	square[0] = 1;
 	tsquare[0] = ~square[0];
@@ -540,8 +733,8 @@ void main() {
 	maxRightUpEndTurn = square[5] | square[11] | square[17];
 	turnLeftUp = possibleLeftUp | square[7] | square[15] | square[23] | square[30] | square[4] | square[10];
 	turnRightDown = possibleRightDown | square[7] | square[13] | square[19] | square[26] | square[2] | square[10];
-	turnLeftDown = possibleLeftDown | square[30] | square[22] | square[14] | square[13] | square[19] | square[25];
-	turnRightUp = possibleRightUp | square[2] | square[26] | square[30] | square[4] | square[10];
+	turnLeftDown = possibleLeftDown | square[31] | square[23] | square[15] | square[13] | square[19] | square[25] | square[7];
+	turnRightUp = possibleRightUp | square[2] | square[24] | square[30] | square[4] | square[10] | square[18] | square[26];
 	x[0] = square[24] | square[31];
 	x[1] = square[5] | square[30] | square[23] | square[16];
 	x[2] = square[11] | square[4] | square[29] | square[22] | square[15] | square[8];
@@ -579,13 +772,28 @@ void main() {
 	possibleLeftDown64 = turnLeftDown64 ^ (buf64 << 31) ^ (buf64 << 23) ^ (buf64 << 15) ^ (buf64 << 7) ^ (buf64 << 13) ^ (buf64 << 19) ^ (buf64 << 25);
 	possibleLeftUp64 = turnLeftUp64 ^ (buf64 << 7) ^ (buf64 << 15) ^ (buf64 << 23) ^ (buf64 << 30) ^ (buf64 << 36) ^ (buf64 << 42);
 	possibleRightDown64 = turnRightDown64 ^ (buf64 << 7) ^ (buf64 << 13) ^ (buf64 << 19) ^ (buf64 << 26) ^ (buf64 << 34) ^ (buf64 << 42);
-	possibleRightUp64 = turnRightUp64 ^ (buf << 24) ^ (buf64 << 30) ^ (buf64 << 36) ^ (buf64 << 42) ^ (buf64 << 34) ^ (buf64 << 26) ^ (buf64 << 18);
-	cash[0][0] = cash[0][2] = y[0] | y[1] | y[2];
-	cash[0][1] = cash[0][2] = y[7] | y[6] | y[5];
+	possibleRightUp64 = turnRightUp64 ^ (buf64 << 24) ^ (buf64 << 30) ^ (buf64 << 36) ^ (buf64 << 42) ^ (buf64 << 34) ^ (buf64 << 26) ^ (buf64 << 18);
+	buf32 = square[0] | square[7] | square[8];
+	cache[0][0] = cache[0][2] = buf32 | (buf32 << 6) | (buf32 << 12) | (buf32 << 18);
+	buf32 = square[23] | square[24] | square[31];
+	cache[0][1] = cache[0][3] = buf32 | (buf32 << 6) | (buf32 << 12) | (buf32 << 18) | (buf32 >> 26) | (buf32 >> 20) | (buf32 >> 14);
 	active[0] = 1;
 	parent[0] = -1;
-	while (first != 1000000) {
+	deep[0] = 0;
+	//board timeCount = clock();
+	while (deep[first] <= 8) {
+		//showNode(first, first - 1);
 		getTurn();
+	} 
+	cout << first - 1 << endl;
+	int b = 1;
+	for (int i = 1; i < first; i++) {
+		for (int j = i + 1; j < first; j++) {
+			if (active[j] == active[i] && cache[i][0] == cache[j][0] && cache[i][1] == cache[j][1] && cache[i][2] == cache[j][2] && cache[i][3] == cache[j][3]) {
+				b++;
+				j = first;
+			}
+		}
 	}
-	cout << last;
+	cout << first - b << endl;
 }

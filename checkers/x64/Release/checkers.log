@@ -1,0 +1,10 @@
+﻿  checkers.cpp
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(228,11): warning C4018:  >: несоответствие типов со знаком и без знака
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(719,13): warning C4326:  возвращаемый тип "main" должен быть "int", а не "void"
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(790,20): warning C4018:  <: несоответствие типов со знаком и без знака
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(791,25): warning C4018:  <: несоответствие типов со знаком и без знака
+  Создание кода
+  Previous IPDB not found, fall back to full compilation.
+  All 193 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Создание кода завершено
+  checkers.vcxproj -> C:\Users\sshha\source\repos\checkers\x64\Release\checkers.exe

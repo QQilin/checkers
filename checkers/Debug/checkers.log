@@ -1,0 +1,6 @@
+﻿  checkers.cpp
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(78,5): error C2512:  pos: нет подходящего конструктора по умолчанию
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(35,8): message :   см. объявление "pos"
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(79,7): error C2512:  pos64: нет подходящего конструктора по умолчанию
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(46,8): message :   см. объявление "pos64"
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(542,13): warning C4326:  возвращаемый тип "main" должен быть "int", а не "void"
