@@ -27,6 +27,9 @@ ebit queens64, enemy64, emptys64, nomy64;
 num first = 0, last = 1;
 ebit mask, buf64No2;
 bool isQueenTurn;
+ebit turnLeftUp64, turnLeftDown64, turnRightUp64, turnRightDown64, possibleLeftUp64, possibleLeftDown64, possibleRightUp64, possibleRightDown64;
+ebit cutDown;
+unsigned char counter;
 
 struct pos {
 	board possingle;
@@ -71,13 +74,66 @@ board cash[67108864][4];
 num parent[67108864];
 queue<pos> turns;
 queue<pos64> qturns;
+pos current;
+pos64 current64;
 
 void queenWhite() {
-
+	current64 = qturns.front();
+	qturns.pop();
+	isQueenTurn = false;
+	buf64 = (current64.possingle & possibleLeftUp) << 1; //Ходим вверх-влево, оставляем только те клетки, с которых можно рубить
+	while (buf64) { //можно ли срубить чисто теоретически с клеток?
+		bitTry = (buf64 & current.posenemy) << 1 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+		isQueenTurn = isQueenTurn || bitTry;
+		counter = 1;
+		while (bitTry) {
+			qturns.push(pos64(bitTry, enemy64 & ~(bitTry >> counter), emptys64 | bitTry >> (counter + 1)));
+			counter++;
+			bitTry = ((bitTry & turnLeftUp64) << 1) & emptys64;
+		}
+		buf64 = (buf64 & possibleLeftUp64 & emptys64) << 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+	}
+	buf64 = (current64.possingle & possibleRightDown) >> 1; //Ходим вниз-вправо, оставляем только те клетки, с которых можно рубить
+	while (buf64) { //можно ли срубить чисто теоретически с клеток?
+		bitTry = (buf64 & current.posenemy) >> 1 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+		counter = 1;
+		isQueenTurn = isQueenTurn || bitTry;
+		while (bitTry) {
+			qturns.push(pos64(bitTry, enemy64 & ~(bitTry << counter), emptys64 | bitTry << (counter + 1)));
+			counter++;
+			bitTry = ((bitTry & turnRightDown64) >> 1) & emptys64;
+		}
+		buf64 = (buf64 & possibleRightDown & emptys64) >> 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+	}
+	buf64 = (current64.possingle & possibleRightUp) >> 7; //Ходим вверх-вправо, оставляем только те клетки, с которых можно рубить
+	while (buf64) { //можно ли срубить чисто теоретически с клеток?
+		bitTry = (buf64 & current.posenemy) >> 7 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+		counter = 7;
+		isQueenTurn = isQueenTurn || bitTry;
+		while (bitTry) {
+			qturns.push(pos64(bitTry, enemy64 & ~(bitTry << counter), emptys64 | bitTry << (counter + 7)));
+			counter += 7;
+			bitTry = ((bitTry & turnRightUp64) >> 7) & emptys64;
+		}
+		buf64 = (buf64 & possibleRightUp & emptys64) >> 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+	}
+	buf64 = (current64.possingle & possibleLeftDown) << 7; //Ходим вниз-влево, оставляем только те клетки, с которых можно рубить
+	while (buf64) { //можно ли срубить чисто теоретически с клеток?
+		bitTry = (buf64 & current.posenemy) << 7 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+		counter = 7;
+		isQueenTurn = isQueenTurn || bitTry;
+		while (bitTry) {
+			qturns.push(pos64(bitTry, enemy64 & ~(bitTry >> counter), emptys64 | bitTry >> (counter + 7)));
+			counter += 7;
+			bitTry = ((bitTry & turnLeftDown64) << 7) & emptys64;
+		}
+		buf64 = (buf64 & possibleLeftDown & emptys64) << 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+	}
+	if (isQueenTurn)
 }
 
 void nextWhite() {
-	pos current = turns.front();
+	current = turns.front();
 	turns.pop();
 	tryLeftUp = (((current.possingle & possibleLeftUp) << 1 & current.posenemy) << 1) & current.posemptys;
 	tryRightDown = (((current.possingle & possibleRightDown) >> 1 & current.posenemy) >> 1) & current.posemptys;
@@ -108,6 +164,7 @@ void nextWhite() {
 				turns.push(pos((current.possingle << 14) | (current.possingle >> 18), current.posenemy & ~((current.possingle << 7) | (current.possingle >> 25)), current.posemptys | current.possingle));
 			}
 		}
+		nextWhite();
 	}
 	else {
 		cash[last][3] = current.possingle | cash[first][3] & ~current.posemptys;
@@ -116,9 +173,9 @@ void nextWhite() {
 		cash[last][2] = cash[first][2] & ~current.posemptys;
 		parent[last] = first;
 		last++;
-	}
-	if (!turns.empty()) {
-		nextWhite();
+		if (!turns.empty()) {
+			nextWhite();
+		}
 	}
 }
 void nextBlack() {
@@ -153,6 +210,7 @@ void nextBlack() {
 		if (tryRightUp) {
 			turns.push(pos((current.possingle << 14) | (current.possingle >> 18), current.posenemy & ~((current.possingle << 7) | (current.possingle >> 25)), current.posemptys | current.possingle));
 		}
+		nextBlack();
 	}
 	else {
 		cash[last][2] = current.possingle | cash[first][2] & ~current.posemptys;
@@ -161,9 +219,9 @@ void nextBlack() {
 		cash[last][3] = cash[first][3] & ~current.posemptys;
 		parent[last] = first;
 		last++;
-	}
-	if (!turns.empty()) {
-		nextBlack();
+		if (!turns.empty()) {
+			nextBlack();
+		}
 	}
 }
 
@@ -173,12 +231,6 @@ void getTurnWhite() {
 	emptys = ~all;
 	queens = cash[first][0] ^ cash[first][2];
 	singles = cash[first][2];
-	tryLeftUp = (((singles & possibleLeftUp) << 1 & enemy) << 1) & emptys;
-	tryRightDown = (((singles & possibleRightDown) >> 1 & enemy) >> 1) & emptys;
-	buf32 = ((singles & possibleRightUp) << 7 | (singles & possibleRightUp) >> 25) & enemy;
-	tryRightUp = ((buf32 << 7) | (buf32 >> 25)) & emptys;
-	buf32 = ((singles & possibleLeftDown) >> 7 | (singles & possibleLeftDown) << 25) & enemy;
-	tryLeftDown = ((buf32 >> 7) | (buf32 << 25)) & emptys;
 	isQueenTurn = false;
 	if (queens) {
 		queens64 = queens;
@@ -188,64 +240,125 @@ void getTurnWhite() {
 		enemy64 = enemy;
 		enemy64 = (enemy64 << 32) & bit8y57 | enemy64 & bit8y04;
 		nomy64 = enemy64 | emptys64; //Пустые или с врагами клетки
-		buf64 = queens64 << 1 & nomy64; //Ходим вверх-влево
-		while (buf64) {
-			bitTry = ((buf64 & enemy64)) << 1 & emptys64; //смогли срубить (есть ли враг на текущей клетке, и пуста ли следущая клетка)
-			buf64 = (buf64 & emptys64) << 1; //не смогли срубить (текущая клетка пуста)
-			isQueenTurn |= bitTry;
+		buf64 = (queens64 & possibleLeftUp) << 1; //Ходим вверх-влево, оставляем только те клетки, с которых можно рубить
+		while (buf64) { //можно ли срубить чисто теоретически с клеток?
+			bitTry = (buf64 & enemy64) << 1 & emptys64; //можно ли срубить? (хранит конечные положения)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			isQueenTurn = isQueenTurn || bitTry; //Срубили ли хоть раз королевой?
+			counter = 1; //считает какой по счёту ход дамкой от конечного положения
 			while (bitTry) {
 				buf64No2 = bitTry;
 				do {
 					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
-					qturns.push(pos64(mask >> 2, enemy64 & ~(mask >> 1), emptys | mask >> 2));
+					qturns.push(pos64(mask, enemy64 & ~(mask >> counter), emptys64 | mask >> (counter + 1)));
 					buf64No2 &= buf64No2 - 1;
 				} while (buf64No2);
-				bitTry = (bitTry << 1) & emptys64;
+				counter++;
+				bitTry = ((bitTry & turnLeftUp64) << 1 ) & emptys64; //Для вычисления всех конечных положений сдвигаем по направлению движения срубившие шашки
 			}
-			
+			buf64 = (buf64 & possibleLeftUp64 & emptys64) << 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
 		}
-		
+		buf64 = (queens64 & possibleRightDown) >> 1; //Ходим вниз-вправо, оставляем только те клетки, с которых можно рубить
+		while (buf64) { //можно ли срубить чисто теоретически с клеток?
+			bitTry = (buf64 & enemy64) >> 1 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			isQueenTurn = isQueenTurn || bitTry; //Срубили ли хоть раз королевой?
+			counter = 1; //считает какой по счёту ход дамкой от конечного положения
+			while (bitTry) {
+				buf64No2 = bitTry;
+				do {
+					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
+					qturns.push(pos64(mask, enemy64 & ~(mask << counter), emptys64 | mask << (counter + 1)));
+					buf64No2 &= buf64No2 - 1;
+				} while (buf64No2);
+				counter++;
+				bitTry = ((bitTry & turnRightDown64) >> 1) & emptys64;
+			}
+			buf64 = (buf64 & possibleRightDown & emptys64) >> 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		}
+		buf64 = (queens64 & possibleRightUp) >> 7; //Ходим вверх-вправо, оставляем только те клетки, с которых можно рубить
+		while (buf64) { //можно ли срубить чисто теоретически с клеток?
+			bitTry = (buf64 & enemy64) >> 7 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			isQueenTurn = isQueenTurn || bitTry; //Срубили ли хоть раз королевой?
+			counter = 7; //считает какой по счёту ход дамкой от конечного положения
+			while (bitTry) {
+				buf64No2 = bitTry;
+				do {
+					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
+					qturns.push(pos64(mask, enemy64 & ~(mask << counter), emptys64 | mask << (counter + 7)));
+					buf64No2 &= buf64No2 - 1;
+				} while (buf64No2);
+				bitTry = ((bitTry & turnRightUp64) >> 7) & emptys64;
+				counter += 7;
+			}
+			buf64 = (buf64 & possibleRightUp & emptys64) >> 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		}
+		buf64 = (queens64 & possibleLeftDown) << 7; //Ходим вниз-влево, оставляем только те клетки, с которых можно рубить
+		while (buf64) { //можно ли срубить чисто теоретически с клеток?
+			bitTry = (buf64 & enemy64) << 7 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			isQueenTurn = isQueenTurn || bitTry; //Срубили ли хоть раз королевой?
+			counter = 7; //считает какой по счёту ход дамкой от конечного положения
+			while (bitTry) {
+				buf64No2 = bitTry;
+				do {
+					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
+					qturns.push(pos64(mask, enemy64 & ~(mask >> counter), emptys64 | mask >> (counter + 7)));
+					buf64No2 &= buf64No2 - 1;
+				} while (buf64No2);
+				bitTry = ((bitTry & turnLeftDown64) << 7) & emptys64;
+				counter += 7;
+			}
+			buf64 = (buf64 & possibleLeftDown & emptys64) << 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		}
 	}
-	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
-		if (tryLeftUp) {
-			buf = tryLeftUp & maxLeftUpEndTurn;
-			tryLeftUp ^= maxLeftUpEndTurn;
-			while (buf) {
-				buf32 = buf ^ (buf & (buf - 1));
-				qturns.push(pos64(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
-				buf &= buf - 1;
+	tryLeftUp = (((singles & possibleLeftUp) << 1 & enemy) << 1) & emptys;
+	tryRightDown = (((singles & possibleRightDown) >> 1 & enemy) >> 1) & emptys;
+	buf32 = ((singles & possibleRightUp) << 7 | (singles & possibleRightUp) >> 25) & enemy;
+	tryRightUp = ((buf32 << 7) | (buf32 >> 25)) & emptys;
+	buf32 = ((singles & possibleLeftDown) >> 7 | (singles & possibleLeftDown) << 25) & enemy;
+	tryLeftDown = ((buf32 >> 7) | (buf32 << 25)) & emptys;
+	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown || isQueenTurn) {
+		if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
+			if (tryLeftUp) {
+				buf = tryLeftUp & maxLeftUpEndTurn;
+					tryLeftUp ^= maxLeftUpEndTurn;
+					while (buf) {
+						buf32 = buf ^ (buf & (buf - 1));
+							qturns.push(pos64(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+							buf &= buf - 1;
+					}
+				while (tryLeftUp) {
+					buf32 = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
+						turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+					tryLeftUp &= tryLeftUp - 1;
+				}
 			}
-			while (tryLeftUp) {
-				buf32 = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
+			while (tryRightDown) {
+				buf32 = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
 				turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
-				tryLeftUp &= tryLeftUp - 1;
+				tryRightDown &= tryRightDown - 1;
 			}
-		}
-		while (tryRightDown) {
-			buf32 = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
-			turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
-			tryRightDown &= tryRightDown - 1;
-		}
-		while (tryLeftDown) {
-			buf32 = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
-			turns.push(pos(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
-			tryLeftDown &= tryLeftDown - 1;
-		}
-		if (tryRightUp) {
-			buf = tryRightUp & maxRightUpEndTurn;
-			tryRightUp ^= maxRightUpEndTurn;
-			while (buf) {
-				buf32 = buf ^ (buf & (buf - 1));
-				qturns.push(pos64(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
-				buf &= buf - 1;
+			while (tryLeftDown) {
+				buf32 = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
+				turns.push(pos(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
+				tryLeftDown &= tryLeftDown - 1;
 			}
-			while (tryRightUp) {
-				buf32 = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
-				turns.push(pos(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
-				tryRightUp &= tryRightUp - 1;
+			if (tryRightUp) {
+				buf = tryRightUp & maxRightUpEndTurn;
+				tryRightUp ^= maxRightUpEndTurn;
+				while (buf) {
+					buf32 = buf ^ (buf & (buf - 1));
+					qturns.push(pos64(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
+					buf &= buf - 1;
+				}
+				while (tryRightUp) {
+					buf32 = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
+					turns.push(pos(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
+					tryRightUp &= tryRightUp - 1;
+				}
 			}
+			nextWhite();
 		}
-		nextWhite();
+		if (isQueenTurn || !qturns.empty())
+			queenWhite();
 	}
 	else {
 
@@ -257,52 +370,132 @@ void getTurnBlack() {
 	emptys = ~all;
 	queens = cash[first][1] ^ cash[first][3];
 	singles = cash[first][3];
+	isQueenTurn = false;
+	if (queens) {
+		queens64 = queens;
+		queens64 = (queens64 << 32) & bit8y57 | queens64 & bit8y04;
+		emptys64 = emptys;
+		emptys64 = (emptys64 << 32) & bit8y57 | emptys64 & bit8y04;
+		enemy64 = enemy;
+		enemy64 = (enemy64 << 32) & bit8y57 | enemy64 & bit8y04;
+		nomy64 = enemy64 | emptys64; //Пустые или с врагами клетки
+		buf64 = (queens64 & possibleLeftUp) << 1; //Ходим вверх-влево, оставляем только те клетки, с которых можно рубить
+		while (buf64) { //можно ли срубить чисто теоретически с клеток?
+			bitTry = (buf64 & enemy64) << 1 & emptys64; //можно ли срубить? (хранит конечные положения)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			isQueenTurn = isQueenTurn || bitTry; //Срубили ли хоть раз королевой?
+			counter = 1; //считает какой по счёту ход дамкой от конечного положения
+			while (bitTry) {
+				buf64No2 = bitTry;
+				do {
+					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
+					qturns.push(pos64(mask, enemy64 & ~(mask >> counter), emptys64 | mask >> (counter + 1)));
+					buf64No2 &= buf64No2 - 1;
+				} while (buf64No2);
+				counter++;
+				bitTry = ((bitTry & turnLeftUp64) << 1) & emptys64; //Для вычисления всех конечных положений сдвигаем по направлению движения срубившие шашки
+			}
+			buf64 = (buf64 & possibleLeftUp64 & emptys64) << 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		}
+		buf64 = (queens64 & possibleRightDown) >> 1; //Ходим вниз-вправо, оставляем только те клетки, с которых можно рубить
+		while (buf64) { //можно ли срубить чисто теоретически с клеток?
+			bitTry = (buf64 & enemy64) >> 1 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			isQueenTurn = isQueenTurn || bitTry; //Срубили ли хоть раз королевой?
+			counter = 1; //считает какой по счёту ход дамкой от конечного положения
+			while (bitTry) {
+				buf64No2 = bitTry;
+				do {
+					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
+					qturns.push(pos64(mask, enemy64 & ~(mask << counter), emptys64 | mask << (counter + 1)));
+					buf64No2 &= buf64No2 - 1;
+				} while (buf64No2);
+				counter++;
+				bitTry = ((bitTry & turnRightDown64) >> 1) & emptys64;
+			}
+			buf64 = (buf64 & possibleRightDown & emptys64) >> 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		}
+		buf64 = (queens64 & possibleRightUp) >> 7; //Ходим вверх-вправо, оставляем только те клетки, с которых можно рубить
+		while (buf64) { //можно ли срубить чисто теоретически с клеток?
+			bitTry = (buf64 & enemy64) >> 7 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			isQueenTurn = isQueenTurn || bitTry; //Срубили ли хоть раз королевой?
+			counter = 7; //считает какой по счёту ход дамкой от конечного положения
+			while (bitTry) {
+				buf64No2 = bitTry;
+				do {
+					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
+					qturns.push(pos64(mask, enemy64 & ~(mask << counter), emptys64 | mask << (counter + 7)));
+					buf64No2 &= buf64No2 - 1;
+				} while (buf64No2);
+				bitTry = ((bitTry & turnRightUp64) >> 7) & emptys64;
+				counter += 7;
+			}
+			buf64 = (buf64 & possibleRightUp & emptys64) >> 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		}
+		buf64 = (queens64 & possibleLeftDown) << 7; //Ходим вниз-влево, оставляем только те клетки, с которых можно рубить
+		while (buf64) { //можно ли срубить чисто теоретически с клеток?
+			bitTry = (buf64 & enemy64) << 7 & emptys64; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			isQueenTurn = isQueenTurn || bitTry; //Срубили ли хоть раз королевой?
+			counter = 7; //считает какой по счёту ход дамкой от конечного положения
+			while (bitTry) {
+				buf64No2 = bitTry;
+				do {
+					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
+					qturns.push(pos64(mask, enemy64 & ~(mask >> counter), emptys64 | mask >> (counter + 7)));
+					buf64No2 &= buf64No2 - 1;
+				} while (buf64No2);
+				bitTry = ((bitTry & turnLeftDown64) << 7) & emptys64;
+				counter += 7;
+			}
+			buf64 = (buf64 & possibleLeftDown & emptys64) << 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		}
+	}
 	tryLeftUp = (((singles & possibleLeftUp) << 1 & enemy) << 1) & emptys;
 	tryRightDown = (((singles & possibleRightDown) >> 1 & enemy) >> 1) & emptys;
 	buf32 = ((singles & possibleRightUp) << 7 | (singles & possibleRightUp) >> 25) & enemy;
 	tryRightUp = ((buf32 << 7) | (buf32 >> 25)) & emptys;
 	buf32 = ((singles & possibleLeftDown) >> 7 | (singles & possibleLeftDown) << 25) & enemy;
 	tryLeftDown = ((buf32 >> 7) | (buf32 << 25)) & emptys;
-	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
-		while (tryLeftUp) {
-			buf32 = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
-			turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
-			tryLeftUp &= tryLeftUp - 1;
-		}
-		if (tryRightDown) {
-			buf = tryRightDown & maxRightDownEndTurn;
-			tryRightDown ^= maxRightDownEndTurn;
-			while (buf) {
-				buf32 = buf ^ (buf & (buf - 1));
-				qturns.push(pos64(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
-				buf &= buf - 1;
-			}
-			while (tryRightDown) {
-				buf32 = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
+	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown || isQueenTurn) {
+		if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
+			while (tryLeftUp) {
+				buf32 = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
 				turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
-				tryRightDown &= tryRightDown - 1;
+				tryLeftUp &= tryLeftUp - 1;
 			}
-		}
-		if (tryLeftDown) {
-			buf = tryLeftDown & maxLeftDownEndTurn;
-			tryLeftDown ^= maxLeftDownEndTurn;
-			while (buf) {
-				buf32 = buf ^ (buf & (buf - 1));
-				qturns.push(pos64(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
-				buf &= buf - 1;
+			if (tryRightDown) {
+				buf = tryRightDown & maxRightDownEndTurn;
+				tryRightDown ^= maxRightDownEndTurn;
+				while (buf) {
+					buf32 = buf ^ (buf & (buf - 1));
+					qturns.push(pos64(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+					buf &= buf - 1;
+				}
+				while (tryRightDown) {
+					buf32 = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
+					turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+					tryRightDown &= tryRightDown - 1;
+				}
 			}
-			while (tryLeftDown) {
-				buf32 = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
-				turns.push(pos(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
-				tryLeftDown &= tryLeftDown - 1;
+			if (tryLeftDown) {
+				buf = tryLeftDown & maxLeftDownEndTurn;
+				tryLeftDown ^= maxLeftDownEndTurn;
+				while (buf) {
+					buf32 = buf ^ (buf & (buf - 1));
+					qturns.push(pos64(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
+					buf &= buf - 1;
+				}
+				while (tryLeftDown) {
+					buf32 = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
+					turns.push(pos(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
+					tryLeftDown &= tryLeftDown - 1;
+				}
 			}
+			while (tryRightUp) {
+				buf32 = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
+				turns.push(pos(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
+				tryRightUp &= tryRightUp - 1;
+			}
+			nextBlack();
 		}
-		while (tryRightUp) {
-			buf32 = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
-			turns.push(pos(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
-			tryRightUp &= tryRightUp - 1;
-		}
-		nextBlack();
 	}
 	else {
 
@@ -357,4 +550,13 @@ void main() {
 	bit8y57 <<= 32;
 	bity = bit8y57 | bit8y04;
 	yall = y04 | y57;
+	buf64 = 1;
+	turnLeftUp64 = bity ^ buf64 ^ (buf64 << 8) ^ (buf64 << 16) ^ (buf64 << 24) ^ (buf64 << 31) ^ (buf64 << 37) ^ (buf64 << 43) ^ (buf64 << 49);
+	turnRightUp64 = bity ^ (buf64 << 31) ^ (buf64 << 37) ^ (buf64 << 43) ^ (buf64 << 49) ^ (buf64 << 41) ^ (buf64 << 33) ^ (buf64 << 25);
+	turnRightDown64 = bity ^ buf64 ^ (buf64 << 6) ^ (buf64 << 12) ^ (buf64 << 18) ^ (buf64 << 49) ^ (buf64 << 41) ^ (buf64 << 33) ^ (buf64 << 25);
+	turnLeftDown64 = bity ^ buf64 ^ (buf64 << 6) ^ (buf64 << 12) ^ (buf64 << 18) ^ (buf64 << 8) ^ (buf64 << 16) ^ (buf64 << 24);
+	possibleLeftDown64 = turnLeftDown64 ^ (buf64 << 31) ^ (buf64 << 23) ^ (buf64 << 15) ^ (buf64 << 7) ^ (buf64 << 13) ^ (buf64 << 19) ^ (buf64 << 25);
+	possibleLeftUp64 = turnLeftUp64 ^ (buf64 << 7) ^ (buf64 << 15) ^ (buf64 << 23) ^ (buf64 << 30) ^ (buf64 << 36) ^ (buf64 << 42);
+	possibleRightDown64 = turnRightDown64 ^ (buf64 << 7) ^ (buf64 << 13) ^ (buf64 << 19) ^ (buf64 << 26) ^ (buf64 << 34) ^ (buf64 << 42);
+	possibleRightUp64 = turnRightUp64 ^ (buf << 24) ^ (buf64 << 30) ^ (buf64 << 36) ^ (buf64 << 42) ^ (buf64 << 34) ^ (buf64 << 26) ^ (buf64 << 18);
 }
