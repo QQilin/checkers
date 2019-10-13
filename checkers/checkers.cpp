@@ -12,20 +12,21 @@ board tsquare[32];
 const board possibleLeftUp = 1048343118, possibleLeftDown = 2087865918, possibleRightDown = 4193372472, possibleRightUp = 955904457;
 board all, enemy, emptys, singles, queens;
 board tryLeftUp, tryRightUp, tryLeftDown, tryRightDown;
-ebit bittry;
-board maxLeftUp, maxLeftDown, maxRightUp, maxRightDown;
+ebit bitTry;
+board maxLeftUp, maxLeftDown, maxRightUp, maxRightDown, maxLeftUpEndTurn, maxLeftDownEndTurn, maxRightUpEndTurn, maxRightDownEndTurn;
 board turnLeftUp, turnLeftDown, turnRightUp, turnRightDown;
 board x[7];
 board y[8];
 board x24, x15, x06, y34, y25, y16, y07;
 board buf;
-ebit buf64, buf64empty;
-board buf32;
+ebit buf64;
+board buf32, newbuf32;
 board y04, y57, yall;
 ebit bit8y04, bit8y57, bity;
 ebit queens64, enemy64, emptys64, nomy64;
 num first = 0, last = 1;
-board thisMask;
+ebit mask, buf64No2;
+bool isQueenTurn;
 
 struct pos {
 	board possingle;
@@ -166,8 +167,6 @@ void nextBlack() {
 	}
 }
 
-//Внедрить подобие бинарного поиска
-
 void getTurnWhite() {
 	all = cash[first][0] | cash[first][1];
 	enemy = cash[first][1];
@@ -180,6 +179,7 @@ void getTurnWhite() {
 	tryRightUp = ((buf32 << 7) | (buf32 >> 25)) & emptys;
 	buf32 = ((singles & possibleLeftDown) >> 7 | (singles & possibleLeftDown) << 25) & enemy;
 	tryLeftDown = ((buf32 >> 7) | (buf32 << 25)) & emptys;
+	isQueenTurn = false;
 	if (queens) {
 		queens64 = queens;
 		queens64 = (queens64 << 32) & bit8y57 | queens64 & bit8y04;
@@ -188,168 +188,62 @@ void getTurnWhite() {
 		enemy64 = enemy;
 		enemy64 = (enemy64 << 32) & bit8y57 | enemy64 & bit8y04;
 		nomy64 = enemy64 | emptys64; //Пустые или с врагами клетки
-		buf64 = queens64 << 7 & nomy64;
-		if (buf64) {
-			bittry = ((buf64 & enemy) << 7) & emptys64; //Смогли срубить
-			buf64 = buf64 ^ bittry;
-			while (bittry) {
-				thisMask = bittry ^ (bittry & (bittry - 1));
-				bittry &= bittry - 1;
+		buf64 = queens64 << 1 & nomy64; //Ходим вверх-влево
+		while (buf64) {
+			bitTry = ((buf64 & enemy64)) << 1 & emptys64; //смогли срубить (есть ли враг на текущей клетке, и пуста ли следущая клетка)
+			buf64 = (buf64 & emptys64) << 1; //не смогли срубить (текущая клетка пуста)
+			isQueenTurn |= bitTry;
+			while (bitTry) {
+				buf64No2 = bitTry;
+				do {
+					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
+					qturns.push(pos64(mask >> 2, enemy64 & ~(mask >> 1), emptys | mask >> 2));
+					buf64No2 &= buf64No2 - 1;
+				} while (buf64No2);
+				bitTry = (bitTry << 1) & emptys64;
 			}
+			
 		}
+		
 	}
 	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
 		if (tryLeftUp) {
-			if (tryLeftUp & square[24])
-				turns.push(pos(square[24], enemy & tsquare[23], emptys | square[22]));
-			if (tryLeftUp & square[30])
-				turns.push(pos(square[30], enemy & tsquare[29], emptys | square[28]));
-			if (tryLeftUp & square[4])
-				turns.push(pos(square[4], enemy & tsquare[3], emptys | square[2]));
-			if (tryLeftUp & square[23])
-				turns.push(pos(square[23], enemy & tsquare[22], emptys | square[21]));
-			if (tryLeftUp & square[29])
-				turns.push(pos(square[29], enemy & tsquare[28], emptys | square[27]));
-			if (tryLeftUp & square[3])
-				turns.push(pos(square[3], enemy & tsquare[2], emptys | square[1]));
-			if (tryLeftUp & square[16])
-				turns.push(pos(square[16], enemy & tsquare[15], emptys | square[14]));
-			if (tryLeftUp & square[22])
-				turns.push(pos(square[22], enemy & tsquare[21], emptys | square[20]));
-			if (tryLeftUp & square[28])
-				turns.push(pos(square[28], enemy & tsquare[27], emptys | square[26]));
-			if (tryLeftUp & square[15])
-				turns.push(pos(square[15], enemy & tsquare[14], emptys | square[13]));
-			if (tryLeftUp & square[21])
-				turns.push(pos(square[21], enemy & tsquare[20], emptys | square[19]));
-			if (tryLeftUp & square[27])
-				turns.push(pos(square[27], enemy & tsquare[26], emptys | square[25]));
-			if (tryLeftUp & square[8])
-				turns.push(pos(square[8], enemy & tsquare[7], emptys | square[6]));
-			if (tryLeftUp & square[14])
-				turns.push(pos(square[14], enemy & tsquare[13], emptys | square[12]));
-			if (tryLeftUp & square[20])
-				turns.push(pos(square[20], enemy & tsquare[19], emptys | square[18]));
-			if (tryLeftUp & square[31])
-				qturns.push(pos64(square[31], enemy & tsquare[30], emptys | square[29]));
-			if (tryLeftUp & square[5])
-				qturns.push(pos64(square[5], enemy & tsquare[4], emptys | square[3]));
-			if (tryLeftUp & square[11])
-				qturns.push(pos64(square[11], enemy & tsquare[10], emptys | square[9]));
+			buf = tryLeftUp & maxLeftUpEndTurn;
+			tryLeftUp ^= maxLeftUpEndTurn;
+			while (buf) {
+				buf32 = buf ^ (buf & (buf - 1));
+				qturns.push(pos64(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+				buf &= buf - 1;
+			}
+			while (tryLeftUp) {
+				buf32 = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
+				turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+				tryLeftUp &= tryLeftUp - 1;
+			}
 		}
-		if (tryRightDown) {
-			if (tryRightDown & square[13])
-				turns.push(pos(square[13], enemy & tsquare[14], emptys | square[15]));
-			if (tryRightDown & square[19])
-				turns.push(pos(square[19], enemy & tsquare[20], emptys | square[21]));
-			if (tryRightDown & square[25])
-				turns.push(pos(square[25], enemy & tsquare[26], emptys | square[27]));
-			if (tryRightDown & square[9])
-				turns.push(pos(square[9], enemy & tsquare[10], emptys | square[11]));
-			if (tryRightDown & square[29])
-				turns.push(pos(square[29], enemy & tsquare[30], emptys | square[31]));
-			if (tryRightDown & square[3])
-				turns.push(pos(square[3], enemy & tsquare[4], emptys | square[5]));
-			if (tryRightDown & square[2])
-				turns.push(pos(square[2], enemy & tsquare[3], emptys | square[4]));
-			if (tryRightDown & square[22])
-				turns.push(pos(square[22], enemy & tsquare[23], emptys | square[24]));
-			if (tryRightDown & square[28])
-				turns.push(pos(square[28], enemy & tsquare[29], emptys | square[30]));
-			if (tryRightDown & square[1])
-				turns.push(pos(square[1], enemy & tsquare[2], emptys | square[3]));
-			if (tryRightDown & square[21])
-				turns.push(pos(square[21], enemy & tsquare[22], emptys | square[23]));
-			if (tryRightDown & square[27])
-				turns.push(pos(square[27], enemy & tsquare[28], emptys | square[29]));
-			if (tryRightDown & square[26])
-				turns.push(pos(square[26], enemy & tsquare[27], emptys | square[28]));
-			if (tryRightDown & square[14])
-				turns.push(pos(square[14], enemy & tsquare[15], emptys | square[16]));
-			if (tryRightDown & square[20])
-				turns.push(pos(square[20], enemy & tsquare[21], emptys | square[22]));
-			if (tryRightDown & square[6])
-				turns.push(pos(square[6], enemy & tsquare[7], emptys | square[8]));
-			if (tryRightDown & square[12])
-				turns.push(pos(square[12], enemy & tsquare[13], emptys | square[14]));
-			if (tryRightDown & square[18])
-				turns.push(pos(square[18], enemy & tsquare[19], emptys | square[20]));
+		while (tryRightDown) {
+			buf32 = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
+			turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+			tryRightDown &= tryRightDown - 1;
 		}
-		if (tryLeftDown) {
-			if (tryLeftUp & square[13])
-				turns.push(pos(square[13], enemy & tsquare[20], emptys | square[27]));
-			if (tryLeftUp & square[19])
-				turns.push(pos(square[19], enemy & tsquare[26], emptys | square[1]));
-			if (tryLeftUp & square[7])
-				turns.push(pos(square[7], enemy & tsquare[14], emptys | square[21]));
-			if (tryLeftUp & square[23])
-				turns.push(pos(square[23], enemy & tsquare[30], emptys | square[5]));
-			if (tryLeftUp & square[29])
-				turns.push(pos(square[29], enemy & tsquare[4], emptys | square[11]));
-			if (tryLeftUp & square[3])
-				turns.push(pos(square[3], enemy & tsquare[10], emptys | square[17]));
-			if (tryLeftUp & square[16])
-				turns.push(pos(square[16], enemy & tsquare[23], emptys | square[30]));
-			if (tryLeftUp & square[22])
-				turns.push(pos(square[22], enemy & tsquare[29], emptys | square[4]));
-			if (tryLeftUp & square[28])
-				turns.push(pos(square[28], enemy & tsquare[3], emptys | square[10]));
-			if (tryLeftUp & square[15])
-				turns.push(pos(square[15], enemy & tsquare[22], emptys | square[29]));
-			if (tryLeftUp & square[21])
-				turns.push(pos(square[21], enemy & tsquare[28], emptys | square[3]));
-			if (tryLeftUp & square[27])
-				turns.push(pos(square[27], enemy & tsquare[2], emptys | square[9]));
-			if (tryLeftUp & square[8])
-				turns.push(pos(square[8], enemy & tsquare[15], emptys | square[22]));
-			if (tryLeftUp & square[14])
-				turns.push(pos(square[14], enemy & tsquare[21], emptys | square[28]));
-			if (tryLeftUp & square[20])
-				turns.push(pos(square[20], enemy & tsquare[27], emptys | square[2]));
-			if (tryLeftUp & square[6])
-				turns.push(pos(square[6], enemy & tsquare[13], emptys | square[20]));
-			if (tryLeftUp & square[12])
-				turns.push(pos(square[12], enemy & tsquare[19], emptys | square[26]));
-			if (tryLeftUp & square[0])
-				turns.push(pos(square[0], enemy & tsquare[7], emptys | square[14]));
+		while (tryLeftDown) {
+			buf32 = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
+			turns.push(pos(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
+			tryLeftDown &= tryLeftDown - 1;
 		}
 		if (tryRightUp) {
-			if (tryRightUp & square[10])
-				turns.push(pos(square[10], enemy & tsquare[3], emptys | square[28]));
-			if (tryRightUp & square[30])
-				turns.push(pos(square[30], enemy & tsquare[23], emptys | square[16]));
-			if (tryRightUp & square[4])
-				turns.push(pos(square[4], enemy & tsquare[29], emptys | square[22]));
-			if (tryRightUp & square[9])
-				turns.push(pos(square[9], enemy & tsquare[2], emptys | square[27]));
-			if (tryRightUp & square[29])
-				turns.push(pos(square[29], enemy & tsquare[22], emptys | square[15]));
-			if (tryRightUp & square[3])
-				turns.push(pos(square[3], enemy & tsquare[28], emptys | square[21]));
-			if (tryRightUp & square[2])
-				turns.push(pos(square[2], enemy & tsquare[27], emptys | square[20]));
-			if (tryRightUp & square[22])
-				turns.push(pos(square[22], enemy & tsquare[15], emptys | square[8]));
-			if (tryRightUp & square[28])
-				turns.push(pos(square[28], enemy & tsquare[21], emptys | square[14]));
-			if (tryRightUp & square[1])
-				turns.push(pos(square[1], enemy & tsquare[26], emptys | square[19]));
-			if (tryRightUp & square[21])
-				turns.push(pos(square[21], enemy & tsquare[14], emptys | square[7]));
-			if (tryRightUp & square[27])
-				turns.push(pos(square[27], enemy & tsquare[20], emptys | square[13]));
-			if (tryRightUp & square[26])
-				turns.push(pos(square[26], enemy & tsquare[19], emptys | square[12]));
-			if (tryRightUp & square[14])
-				turns.push(pos(square[14], enemy & tsquare[7], emptys | square[0]));
-			if (tryRightUp & square[20])
-				turns.push(pos(square[20], enemy & tsquare[13], emptys | square[6]));
-			if (tryRightUp & square[17])
-				qturns.push(pos64(square[17], enemy & tsquare[10], emptys | square[3]));
-			if (tryRightUp & square[5])
-				qturns.push(pos64(square[5], enemy & tsquare[30], emptys | square[23]));
-			if (tryRightUp & square[11])
-				qturns.push(pos64(square[11], enemy & tsquare[4], emptys | square[29]));
+			buf = tryRightUp & maxRightUpEndTurn;
+			tryRightUp ^= maxRightUpEndTurn;
+			while (buf) {
+				buf32 = buf ^ (buf & (buf - 1));
+				qturns.push(pos64(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
+				buf &= buf - 1;
+			}
+			while (tryRightUp) {
+				buf32 = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
+				turns.push(pos(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
+				tryRightUp &= tryRightUp - 1;
+			}
 		}
 		nextWhite();
 	}
@@ -370,157 +264,43 @@ void getTurnBlack() {
 	buf32 = ((singles & possibleLeftDown) >> 7 | (singles & possibleLeftDown) << 25) & enemy;
 	tryLeftDown = ((buf32 >> 7) | (buf32 << 25)) & emptys;
 	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
-		if (tryLeftUp) {
-			if (tryLeftUp & square[24])
-				turns.push(pos(square[24], enemy & tsquare[23], emptys | square[22]));
-			if (tryLeftUp & square[30])
-				turns.push(pos(square[30], enemy & tsquare[29], emptys | square[28]));
-			if (tryLeftUp & square[4])
-				turns.push(pos(square[4], enemy & tsquare[3], emptys | square[2]));
-			if (tryLeftUp & square[23])
-				turns.push(pos(square[23], enemy & tsquare[22], emptys | square[21]));
-			if (tryLeftUp & square[29])
-				turns.push(pos(square[29], enemy & tsquare[28], emptys | square[27]));
-			if (tryLeftUp & square[3])
-				turns.push(pos(square[3], enemy & tsquare[2], emptys | square[1]));
-			if (tryLeftUp & square[16])
-				turns.push(pos(square[16], enemy & tsquare[15], emptys | square[14]));
-			if (tryLeftUp & square[22])
-				turns.push(pos(square[22], enemy & tsquare[21], emptys | square[20]));
-			if (tryLeftUp & square[28])
-				turns.push(pos(square[28], enemy & tsquare[27], emptys | square[26]));
-			if (tryLeftUp & square[15])
-				turns.push(pos(square[15], enemy & tsquare[14], emptys | square[13]));
-			if (tryLeftUp & square[21])
-				turns.push(pos(square[21], enemy & tsquare[20], emptys | square[19]));
-			if (tryLeftUp & square[27])
-				turns.push(pos(square[27], enemy & tsquare[26], emptys | square[25]));
-			if (tryLeftUp & square[8])
-				turns.push(pos(square[8], enemy & tsquare[7], emptys | square[6]));
-			if (tryLeftUp & square[14])
-				turns.push(pos(square[14], enemy & tsquare[13], emptys | square[12]));
-			if (tryLeftUp & square[20])
-				turns.push(pos(square[20], enemy & tsquare[19], emptys | square[18]));
-			if (tryLeftUp & square[31])
-				turns.push(pos(square[31], enemy & tsquare[30], emptys | square[29]));
-			if (tryLeftUp & square[5])
-				turns.push(pos(square[5], enemy & tsquare[4], emptys | square[3]));
-			if (tryLeftUp & square[11])
-				turns.push(pos(square[11], enemy & tsquare[10], emptys | square[9]));
+		while (tryLeftUp) {
+			buf32 = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
+			turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+			tryLeftUp &= tryLeftUp - 1;
 		}
 		if (tryRightDown) {
-			if (tryRightDown & square[13])
-				turns.push(pos(square[13], enemy & tsquare[14], emptys | square[15]));
-			if (tryRightDown & square[19])
-				turns.push(pos(square[19], enemy & tsquare[20], emptys | square[21]));
-			if (tryRightDown & square[25])
-				turns.push(pos(square[25], enemy & tsquare[26], emptys | square[27]));
-			if (tryRightDown & square[9])
-				turns.push(pos(square[9], enemy & tsquare[10], emptys | square[11]));
-			if (tryRightDown & square[29])
-				turns.push(pos(square[29], enemy & tsquare[30], emptys | square[31]));
-			if (tryRightDown & square[3])
-				turns.push(pos(square[3], enemy & tsquare[4], emptys | square[5]));
-			if (tryRightDown & square[2])
-				turns.push(pos(square[2], enemy & tsquare[3], emptys | square[4]));
-			if (tryRightDown & square[22])
-				turns.push(pos(square[22], enemy & tsquare[23], emptys | square[24]));
-			if (tryRightDown & square[28])
-				turns.push(pos(square[28], enemy & tsquare[29], emptys | square[30]));
-			if (tryRightDown & square[1])
-				turns.push(pos(square[1], enemy & tsquare[2], emptys | square[3]));
-			if (tryRightDown & square[21])
-				turns.push(pos(square[21], enemy & tsquare[22], emptys | square[23]));
-			if (tryRightDown & square[27])
-				turns.push(pos(square[27], enemy & tsquare[28], emptys | square[29]));
-			if (tryRightDown & square[26])
-				turns.push(pos(square[26], enemy & tsquare[27], emptys | square[28]));
-			if (tryRightDown & square[14])
-				turns.push(pos(square[14], enemy & tsquare[15], emptys | square[16]));
-			if (tryRightDown & square[20])
-				turns.push(pos(square[20], enemy & tsquare[21], emptys | square[22]));
-			if (tryRightDown & square[6])
-				qturns.push(pos64(square[6], enemy & tsquare[7], emptys | square[8]));
-			if (tryRightDown & square[12])
-				qturns.push(pos64(square[12], enemy & tsquare[13], emptys | square[14]));
-			if (tryRightDown & square[18])
-				qturns.push(pos64(square[18], enemy & tsquare[19], emptys | square[20]));
+			buf = tryRightDown & maxRightDownEndTurn;
+			tryRightDown ^= maxRightDownEndTurn;
+			while (buf) {
+				buf32 = buf ^ (buf & (buf - 1));
+				qturns.push(pos64(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+				buf &= buf - 1;
+			}
+			while (tryRightDown) {
+				buf32 = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
+				turns.push(pos(buf32, enemy & ~(buf32 >> 1), emptys | buf32 >> 2));
+				tryRightDown &= tryRightDown - 1;
+			}
 		}
 		if (tryLeftDown) {
-			if (tryLeftUp & square[13])
-				turns.push(pos(square[13], enemy & tsquare[20], emptys | square[27]));
-			if (tryLeftUp & square[19])
-				turns.push(pos(square[19], enemy & tsquare[26], emptys | square[1]));
-			if (tryLeftUp & square[7])
-				turns.push(pos(square[7], enemy & tsquare[14], emptys | square[21]));
-			if (tryLeftUp & square[23])
-				turns.push(pos(square[23], enemy & tsquare[30], emptys | square[5]));
-			if (tryLeftUp & square[29])
-				turns.push(pos(square[29], enemy & tsquare[4], emptys | square[11]));
-			if (tryLeftUp & square[3])
-				turns.push(pos(square[3], enemy & tsquare[10], emptys | square[17]));
-			if (tryLeftUp & square[16])
-				turns.push(pos(square[16], enemy & tsquare[23], emptys | square[30]));
-			if (tryLeftUp & square[22])
-				turns.push(pos(square[22], enemy & tsquare[29], emptys | square[4]));
-			if (tryLeftUp & square[28])
-				turns.push(pos(square[28], enemy & tsquare[3], emptys | square[10]));
-			if (tryLeftUp & square[15])
-				turns.push(pos(square[15], enemy & tsquare[22], emptys | square[29]));
-			if (tryLeftUp & square[21])
-				turns.push(pos(square[21], enemy & tsquare[28], emptys | square[3]));
-			if (tryLeftUp & square[27])
-				turns.push(pos(square[27], enemy & tsquare[2], emptys | square[9]));
-			if (tryLeftUp & square[8])
-				turns.push(pos(square[8], enemy & tsquare[15], emptys | square[22]));
-			if (tryLeftUp & square[14])
-				turns.push(pos(square[14], enemy & tsquare[21], emptys | square[28]));
-			if (tryLeftUp & square[20])
-				turns.push(pos(square[20], enemy & tsquare[27], emptys | square[2]));
-			if (tryLeftUp & square[6])
-				qturns.push(pos64(square[6], enemy & tsquare[13], emptys | square[20]));
-			if (tryLeftUp & square[12])
-				qturns.push(pos64(square[12], enemy & tsquare[19], emptys | square[26]));
-			if (tryLeftUp & square[0])
-				qturns.push(pos64(square[0], enemy & tsquare[7], emptys | square[14]));
+			buf = tryLeftDown & maxLeftDownEndTurn;
+			tryLeftDown ^= maxLeftDownEndTurn;
+			while (buf) {
+				buf32 = buf ^ (buf & (buf - 1));
+				qturns.push(pos64(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
+				buf &= buf - 1;
+			}
+			while (tryLeftDown) {
+				buf32 = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
+				turns.push(pos(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | buf32 << 14 | buf32 >> 18));
+				tryLeftDown &= tryLeftDown - 1;
+			}
 		}
-		if (tryRightUp) {
-			if (tryRightUp & square[10])
-				turns.push(pos(square[10], enemy & tsquare[3], emptys | square[28]));
-			if (tryRightUp & square[30])
-				turns.push(pos(square[30], enemy & tsquare[23], emptys | square[16]));
-			if (tryRightUp & square[4])
-				turns.push(pos(square[4], enemy & tsquare[29], emptys | square[22]));
-			if (tryRightUp & square[9])
-				turns.push(pos(square[9], enemy & tsquare[2], emptys | square[27]));
-			if (tryRightUp & square[29])
-				turns.push(pos(square[29], enemy & tsquare[22], emptys | square[15]));
-			if (tryRightUp & square[3])
-				turns.push(pos(square[3], enemy & tsquare[28], emptys | square[21]));
-			if (tryRightUp & square[2])
-				turns.push(pos(square[2], enemy & tsquare[27], emptys | square[20]));
-			if (tryRightUp & square[22])
-				turns.push(pos(square[22], enemy & tsquare[15], emptys | square[8]));
-			if (tryRightUp & square[28])
-				turns.push(pos(square[28], enemy & tsquare[21], emptys | square[14]));
-			if (tryRightUp & square[1])
-				turns.push(pos(square[1], enemy & tsquare[26], emptys | square[19]));
-			if (tryRightUp & square[21])
-				turns.push(pos(square[21], enemy & tsquare[14], emptys | square[7]));
-			if (tryRightUp & square[27])
-				turns.push(pos(square[27], enemy & tsquare[20], emptys | square[13]));
-			if (tryRightUp & square[26])
-				turns.push(pos(square[26], enemy & tsquare[19], emptys | square[12]));
-			if (tryRightUp & square[14])
-				turns.push(pos(square[14], enemy & tsquare[7], emptys | square[0]));
-			if (tryRightUp & square[20])
-				turns.push(pos(square[20], enemy & tsquare[13], emptys | square[6]));
-			if (tryRightUp & square[17])
-				turns.push(pos(square[17], enemy & tsquare[10], emptys | square[3]));
-			if (tryRightUp & square[5])
-				turns.push(pos(square[5], enemy & tsquare[30], emptys | square[23]));
-			if (tryRightUp & square[11])
-				turns.push(pos(square[11], enemy & tsquare[4], emptys | square[29]));
+		while (tryRightUp) {
+			buf32 = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
+			turns.push(pos(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | buf32 >> 14 | buf32 << 18));
+			tryRightUp &= tryRightUp - 1;
 		}
 		nextBlack();
 	}
@@ -537,9 +317,13 @@ void main() {
 		tsquare[i] = ~square[i];
 	}
 	maxLeftUp = square[29] | square[3] | square[9];
+	maxLeftUpEndTurn = maxLeftUp << 2;
 	maxRightDown = square[8] | square[14] | square[20];
+	maxRightDownEndTurn = maxRightDown >> 2;
 	maxLeftDown = square[26] | square[14] | square[20];
+	maxLeftDownEndTurn = maxLeftDown >> 14;
 	maxRightUp = square[23] | square[29] | square[3];
+	maxRightUpEndTurn = square[5] | square[11] | square[17];
 	turnLeftUp = possibleLeftUp | square[7] | square[15] | square[23] | square[30] | square[4] | square[10];
 	turnRightDown = possibleRightDown | square[7] | square[13] | square[19] | square[26] | square[2] | square[10];
 	turnLeftDown = possibleLeftDown | square[30] | square[22] | square[14] | square[13] | square[19] | square[25];
