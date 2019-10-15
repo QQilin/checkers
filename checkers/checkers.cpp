@@ -1,6 +1,6 @@
 ﻿#include <iostream>
 #include <queue>
-//#include <ctime>
+#include <vector>
 
 using namespace std;
 
@@ -13,7 +13,7 @@ typedef uint64_t ebit;
 board square[32];
 board tsquare[32];
 const board possibleLeftUp = 1048343118, possibleLeftDown = 2087865918, possibleRightDown = 4193372472, possibleRightUp = 955904457;
-board all, enemy, emptys, singles, queens;
+board all, enemy, emptys, singles, queens, enemySimple, emptySimpleReverse;
 board tryLeftUp, tryRightUp, tryLeftDown, tryRightDown;
 ebit bitTry;
 board maxLeftUp, maxLeftDown, maxRightUp, maxRightDown, maxLeftUpEndTurn, maxLeftDownEndTurn, maxRightUpEndTurn, maxRightDownEndTurn;
@@ -23,7 +23,7 @@ board y[8];
 board x24, x15, x06, y34, y25, y16, y07;
 board buf;
 ebit buf64;
-board buf32, newbuf32;
+board buf32, buf32_1, buf32_2, buf32_3;
 board y04, y57, yall;
 ebit bit8y04, bit8y57, bity;
 ebit queens64, enemy64, emptys64;
@@ -31,8 +31,10 @@ num first = 0, last = 1;
 ebit mask, buf64No2;
 bool isQueenTurn;
 ebit turnLeftUp64, turnLeftDown64, turnRightUp64, turnRightDown64, possibleLeftUp64, possibleLeftDown64, possibleRightUp64, possibleRightDown64;
-unsigned char counter;
+unsigned char counter; 
 bool isTurn;
+
+num countOf = 0;
 
 struct pos {
 	board possingle;
@@ -64,175 +66,79 @@ struct pos64 {
 	}
 };
 
-const  board buffersize = 1024 * 1024 * 80;
-board cache[buffersize][4];
-unsigned char deep[buffersize];
+const num buffersize = 8 * 1024 * 1024;
+const num HASHNUM = buffersize - 1;
 //0 - все шашки белых
 //1 - все шашки чёхных
 //2 - все простые шашки белых
 //3 - все простые шашки чёрных
-num parent[buffersize];
-unsigned char active[buffersize];
 unsigned char act; //Содержит предыдущую активную сторону, 
 //1 сейчас ход белых
 //0 сейчас ход чёрных
+num hashNum; //Данный хэш-номер
+
+board ReverseBits(board argument) {
+	board result = 0;
+	unsigned number = 0;
+	number = (argument << 24) >> 24;
+	number = (number & 0x55) << 1 | (number & 0xAA) >> 1;
+	number = (number & 0x33) << 2 | (number & 0xCC) >> 2;
+	number = (number & 0x0F) << 4 | (number & 0xF0) >> 4;
+	result |= number;
+	result <<= 8;
+	number = (argument << 16) >> 24;
+	number = (number & 0x55) << 1 | (number & 0xAA) >> 1;
+	number = (number & 0x33) << 2 | (number & 0xCC) >> 2;
+	number = (number & 0x0F) << 4 | (number & 0xF0) >> 4;
+	result |= number;
+	result <<= 8;
+	number = (argument << 8) >> 24;
+	number = (number & 0x55) << 1 | (number & 0xAA) >> 1;
+	number = (number & 0x33) << 2 | (number & 0xCC) >> 2;
+	number = (number & 0x0F) << 4 | (number & 0xF0) >> 4;
+	result |= number;
+	result <<= 8;
+	number = argument >> 24;
+	number = (number & 0x55) << 1 | (number & 0xAA) >> 1;
+	number = (number & 0x33) << 2 | (number & 0xCC) >> 2;
+	number = (number & 0x0F) << 4 | (number & 0xF0) >> 4;
+	result |= number;
+	return result;
+}
+
+struct dataSet {
+	board thisBoard[4];
+	unsigned char thisActive;
+	dataSet* next;
+	vector <dataSet*> parents;
+	vector <dataSet*> childrens;
+	dataSet() {
+		next = NULL;
+		thisActive = 1 ^ act;
+	}
+};
+
+dataSet* hashTable[buffersize];
+
+dataSet* cache[buffersize]; //Буфер значений, из которого берём следущий элемент для просчёта
+
+dataSet* active;
+
+dataSet* children;
+
+unsigned char deep[buffersize];
+
+//Будет хэш-таблица, схранящая ссылки на списки вида struct data {datash, data* next} //В хэш-таблицу можно добавлять ссылки на детей, родителей; также записывать значение их оценочных функций
+//Будет обычный массив(2) со ссылками на данные, в котором также записаны родители этих самых данных в виде индексов в данном массиве(2). 
+//Если вдруг hashTable[hashNum(result)] != NULL, то ищём по списку, действительно у нас есть уже такой элемент. Если этот элемент уже действительно просчитан, то ищем его в массиве(2)	
+//Ещё одна идея - сопоставить элементы действительно как граф, а именно в виде матрицы смежности. Т.е. пусть есть char mas[n][n]. Если hashTable[hashNum(result)] != NULL, то mas[this][result] = mas[result][this] = k (k - номер в хэш-таблице, 0 - нет номера)
+
+//Хэш-таблица будет существовать для разных уровней??? Т.е. мы сначала проверяем наличие элемента в этом уровне. Потом проверяем наличие элемента в предыдущий уровнях. 
+
 queue<pos> turns;
 queue<pos64> qturns;
 pos current(possibleLeftUp, possibleLeftUp, possibleLeftUp);
 pos64 current64(possibleLeftUp, possibleLeftUp, possibleLeftUp);
-
-int i;
-string mas[32];
-bool ko;
-
-void show(int caseis) {
-	board bbb = 1;
-	bbb = bbb << caseis;
-	if (bbb & cache[i][0]) {
-		if (bbb & cache[i][2]) {
-			if (ko || mas[caseis] == " 1 " || mas[caseis] == "(1)") {
-				mas[caseis] = " 1 ";
-			}
-			else {
-				mas[caseis] = "(1)";
-			}
-		}
-		else {
-			if (ko || mas[caseis] == " 3 " || mas[caseis] == "(3)") {
-				mas[caseis] = " 3 ";
-			}
-			else {
-				mas[caseis] = "(3)";
-			}
-		}
-	}
-	if (bbb & cache[i][1]) {
-		if (bbb & cache[i][3]) {
-			if (ko || mas[caseis] == " 2 " || mas[caseis] == "(2)") {
-				mas[caseis] = " 2 ";
-			}
-			else {
-				mas[caseis] = "(2)";
-			}
-		}
-		else {
-			if (ko || mas[caseis] == " 4 " || mas[caseis] == "(4)") {
-				mas[caseis] = " 4 ";
-			}
-			else {
-				mas[caseis] = "(4)";
-			}
-		}
-	}
-	if (!(bbb & cache[i][1]) && !(bbb & cache[i][0])) {
-		if (ko || mas[caseis] == " 0 " || mas[caseis] == "(0)") {
-			mas[caseis] = " 0 ";
-		}
-		else {
-			mas[caseis] = "(0)";
-		}
-	}
-	cout << mas[caseis];
-}
-
-bool showall() {
-	if (cache[i][0] == 0) {
-		cout << "Black win" << endl << endl;
-		return true;
-	}
-	if (cache[i][1] == 0) {
-		cout << "White win" << endl << endl;
-		return true;
-	}
-	cout << "   ";
-	show(31);
-	cout << "   ";
-	show(5);
-	cout << "   ";
-	show(11);
-	cout << "   ";
-	show(17);
-	cout << endl;
-	show(24);
-	cout << "   ";
-	show(30);
-	cout << "   ";
-	show(4);
-	cout << "   ";
-	show(10);
-	cout << "   ";
-	cout << endl;
-
-	cout << "   ";
-	show(23);
-	cout << "   ";
-	show(29);
-	cout << "   ";
-	show(3);
-	cout << "   ";
-	show(9);
-	cout << endl;
-	show(16);
-	cout << "   ";
-	show(22);
-	cout << "   ";
-	show(28);
-	cout << "   ";
-	show(2);
-	cout << "   ";
-	cout << endl;
-
-	cout << "   ";
-	show(15);
-	cout << "   ";
-	show(21);
-	cout << "   ";
-	show(27);
-	cout << "   ";
-	show(1);
-	cout << endl;
-	show(8);
-	cout << "   ";
-	show(14);
-	cout << "   ";
-	show(20);
-	cout << "   ";
-	show(26);
-	cout << "   ";
-	cout << endl;
-
-	cout << "   ";
-	show(7);
-	cout << "   ";
-	show(13);
-	cout << "   ";
-	show(19);
-	cout << "   ";
-	show(25);
-	cout << endl;
-	show(0);
-	cout << "   ";
-	show(6);
-	cout << "   ";
-	show(12);
-	cout << "   ";
-	show(18);
-	cout << "   ";
-	cout << endl << endl;
-	return false;
-}
-
-void showNode(board lastn, board firstn) {
-	i = lastn;
-	ko = false;
-	while (i > firstn) {
-		if (i == lastn)
-			ko = true;
-		cout << i << endl;
-		ko = showall();
-		i = parent[i];
-	}		
-}
 
 void getQueenTurn() {
 	current64 = qturns.front();
@@ -290,14 +196,52 @@ void getQueenTurn() {
 		getQueenTurn();
 	}
 	else {
-		cache[last][1 ^ act] = cache[first][1 ^ act] & ~to32(current64.posemptys) | to32(current64.possingle);
-		cache[last][act] = cache[first][act] & to32(current64.posenemy);
-		cache[last][3 ^ act] = cache[first][3 ^ act] & ~(to32(current64.posemptys) | to32(current64.possingle));
-		cache[last][2 | act] = cache[first][2 | act] & to32(current64.posenemy);
-		parent[last] = first;
-		active[last] = 1 ^ act;
-		deep[last] = deep[first] + 1;
-		last++;
+		buf32_1 = active->thisBoard[1 ^ act] & ~to32(current64.posemptys) | to32(current64.possingle); //0 1
+		buf32 = active->thisBoard[3 ^ act] & ~(to32(current64.posemptys) | to32(current64.possingle)); //2 3
+		buf32_2 = active->thisBoard[act] & to32(current64.posenemy); //1 0
+		buf32_3 = active->thisBoard[act ^ 2] & to32(current64.posenemy); //3 2
+		hashNum = ((buf32_2 | buf32_1) ^ ReverseBits((buf32 | buf32_3))) & HASHNUM;
+		if (hashTable[hashNum] != NULL) {
+			children = hashTable[hashNum];
+			while (children->next != NULL) {
+				if (children->thisActive != act &&
+					children->thisBoard[act] == buf32_2 && children->thisBoard[act ^ 2] == buf32_3 &&
+					children->thisBoard[act ^ 3] == buf32 && children->thisBoard[act ^ 1] == buf32_1) {
+					active->childrens.push_back(children);
+					children->parents.push_back(active);
+					break;
+				}
+				children = children->next;
+			}
+			if (children->thisActive != act &&
+				children->thisBoard[act] == buf32_2 && children->thisBoard[act ^ 2] == buf32_3 &&
+				children->thisBoard[act ^ 3] == buf32 && children->thisBoard[act ^ 1] == buf32_1) {
+				active->childrens.push_back(children);
+				children->parents.push_back(active);
+			}
+			else {
+				children->next = cache[last] = hashTable[hashNum] = new dataSet();
+				deep[last] = deep[first] + 1;
+				active->childrens.push_back(cache[last]);
+				cache[last]->parents.push_back(active);
+				cache[last]->thisBoard[act] = buf32_2;
+				cache[last]->thisBoard[act ^ 1] = buf32_1;
+				cache[last]->thisBoard[act ^ 2] = buf32_3;
+				cache[last]->thisBoard[act ^ 3] = buf32;
+				last++;
+			}
+		}
+		else {
+			children = cache[last] = hashTable[hashNum] = new dataSet();
+			deep[last] = deep[first] + 1;
+			active->childrens.push_back(children);
+			children->parents.push_back(active);
+			children->thisBoard[act] = buf32_2;
+			children->thisBoard[act ^ 1] = buf32_1;
+			children->thisBoard[act ^ 2] = buf32_3;
+			children->thisBoard[act ^ 3] = buf32;
+			last++;
+		}
 		if (!qturns.empty()) {
 			getQueenTurn();
 		}
@@ -359,14 +303,52 @@ void next() {
 			next();
 	}
 	else {
-		cache[last][act ^ 3] = current.possingle | cache[first][act ^ 3] & ~current.posemptys;
-		cache[last][act] = cache[first][act] & current.posenemy;
-		cache[last][act ^ 1] = current.possingle | cache[first][act ^ 1] & ~current.posemptys;
-		cache[last][act | 2] = cache[first][act | 2] & current.posenemy;
-		parent[last] = first;
-		active[last] = act ^ 1;
-		deep[last] = deep[first] + 1;
-		last++;
+		buf32_1 = (active->thisBoard[act ^ 1] | current.possingle) & ~current.posemptys; //0 1
+		buf32 = singles & buf32_1; //2 3
+		buf32_2 = active->thisBoard[act] & current.posenemy; //1 0
+		buf32_3 = active->thisBoard[act ^ 2] & current.posenemy; //3 2
+		hashNum = ((buf32_2 | buf32_1) ^ ReverseBits((buf32 | buf32_3))) & HASHNUM;
+		if (hashTable[hashNum] != NULL) {
+			children = hashTable[hashNum];
+			while (children->next != NULL) {
+				if (children->thisActive != act &&
+					children->thisBoard[act] == buf32_2 && children->thisBoard[act ^ 2] == buf32_3 &&
+					children->thisBoard[act ^ 3] == buf32 && children->thisBoard[act ^ 1] == buf32_1) {
+					active->childrens.push_back(children);
+					children->parents.push_back(active);
+					break;
+				}
+				children = children->next;
+			}
+			if (children->thisActive != act &&
+				children->thisBoard[act] == buf32_2 && children->thisBoard[act ^ 2] == buf32_3 &&
+				children->thisBoard[act ^ 3] == buf32 && children->thisBoard[act ^ 1] == buf32_1) {
+				active->childrens.push_back(children);
+				children->parents.push_back(active);
+			}
+			else {
+				children->next = cache[last] = hashTable[hashNum] = new dataSet();
+				deep[last] = deep[first] + 1;
+				active->childrens.push_back(cache[last]);
+				cache[last]->parents.push_back(active);
+				cache[last]->thisBoard[act] = buf32_2;
+				cache[last]->thisBoard[act ^ 1] = buf32_1;
+				cache[last]->thisBoard[act ^ 2] = buf32_3;
+				cache[last]->thisBoard[act ^ 3] = buf32;
+				last++;
+			}
+		}
+		else {
+			children = cache[last] = hashTable[hashNum] = new dataSet();
+			deep[last] = deep[first] + 1;
+			active->childrens.push_back(children);
+			children->parents.push_back(active);
+			children->thisBoard[act] = buf32_2;
+			children->thisBoard[act ^ 1] = buf32_1;
+			children->thisBoard[act ^ 2] = buf32_3;
+			children->thisBoard[act ^ 3] = buf32;
+			last++;
+		}
 		if (!turns.empty()) {
 			next();
 		}
@@ -374,16 +356,27 @@ void next() {
 }
 
 void getTurn() {
-	act = active[first];
-	singles = cache[first][act ^ 3];
-	if (singles == 0) {
+	active = cache[first];
+	act = active->thisActive;
+	enemy = active->thisBoard[act];
+	singles = active->thisBoard[act ^ 3];
+	queens = active->thisBoard[act ^ 1] ^ singles;
+	if (singles == 0 && queens == 0) {
+		active->thisBoard[act ^ 1] = active->thisBoard[act ^ 3] = 0;
+		active->thisBoard[act] = active->thisBoard[act ^ 2] = 0xFFFFFFFF;
+		first++;
+		countOf++;
+		return;
+	}
+	if (enemy == 0) {
+		active->thisBoard[act ^ 1] = active->thisBoard[act ^ 3] = 0xFFFFFFFF;
+		active->thisBoard[act] = active->thisBoard[act ^ 2] = 0;
+		countOf++;
 		first++;
 		return;
 	}
-	enemy = cache[first][act];
-	all = cache[first][0] | cache[first][1];
+	all = active->thisBoard[0] | active->thisBoard[1];
 	emptys = ~all;
-	queens = cache[first][act ^ 1] ^ singles;
 	isQueenTurn = false;
 	tryLeftUp = (((singles & possibleLeftUp) << 1 & enemy) << 1) & emptys;
 	tryRightDown = (((singles & possibleRightDown) >> 1 & enemy) >> 1) & emptys;
@@ -551,6 +544,7 @@ void getTurn() {
 	}
 	else {
 		if (queens) {
+			emptySimpleReverse = ReverseBits(~(singles | active->thisBoard[act ^ 2]));
 			counter = 1; //считает какой по счёту ход дамкой от конечного положения
 			buf64 = (queens64 & turnLeftUp64) << 1 & emptys64; //Ходим вверх-влево, оставляем только те клетки, с которых можно рубить
 			isQueenTurn = isQueenTurn || buf64;
@@ -558,14 +552,50 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					cache[last][2] = cache[first][2];
-					cache[last][3] = cache[first][3];
-					cache[last][act] = cache[first][act];
-					cache[last][1 ^ act] = (cache[first][1 ^ act] | to32(mask)) & ~to32(mask >> counter);
-					parent[last] = first;
-					active[last] = 1 ^ act;
-					deep[last] = deep[first] + 1;
-					last++;
+					hashNum = (((emptys | to32(mask)) & ~to32(mask >> counter)) ^ emptySimpleReverse) & HASHNUM;
+					if (hashTable[hashNum] != NULL) {
+						children = hashTable[hashNum];
+						while (children -> next != NULL) {
+							if (children->thisActive != act &&
+								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
+								children->thisBoard[act] == active->thisBoard[act] && 
+								children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter))) {
+								active->childrens.push_back(children);
+								children->parents.push_back(active);
+								break;
+							}
+							children = children->next;
+						}
+						if (children->thisActive != act &&
+							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
+							children->thisBoard[act] == active->thisBoard[act] &&
+							children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter))) {
+							active->childrens.push_back(children);
+							children->parents.push_back(active);
+						}
+						else {
+							children -> next = cache[last] = hashTable[hashNum] = new dataSet();
+							deep[last] = deep[first] + 1;
+							active->childrens.push_back(cache[last]);
+							cache[last]->parents.push_back(active);
+							cache[last]->thisBoard[2] = active->thisBoard[2];
+							cache[last]->thisBoard[3] = active->thisBoard[3];
+							cache[last]->thisBoard[act] = active->thisBoard[act];
+							cache[last]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter);
+							last++;
+						}
+					}
+					else {
+						children = cache[last] = hashTable[hashNum] = new dataSet();
+						deep[last] = deep[first] + 1;
+						active->childrens.push_back(children);
+						children->parents.push_back(active);
+						children->thisBoard[2] = active->thisBoard[2];
+						children->thisBoard[3] = active->thisBoard[3];
+						children->thisBoard[act] = active->thisBoard[act];
+						children->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter);
+						last++;
+					}
 					bitTry &= bitTry - 1;
 				} while (bitTry);
 				counter++;
@@ -578,14 +608,50 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					cache[last][2] = cache[first][2];
-					cache[last][3] = cache[first][3];
-					cache[last][act] = cache[first][act];
-					cache[last][1 ^ act] = (cache[first][1 ^ act] | to32(mask)) & ~to32(mask << counter);
-					parent[last] = first;
-					active[last] = 1 ^ act;
-					deep[last] = deep[first] + 1;
-					last++;
+					hashNum = (((emptys | to32(mask)) & ~to32(mask << counter)) ^ emptySimpleReverse) & HASHNUM;
+					if (hashTable[hashNum] != NULL) {
+						children = hashTable[hashNum];
+						while (children->next != NULL) {
+							if (children->thisActive != act &&
+								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
+								children->thisBoard[act] == active->thisBoard[act] &&
+								children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter))) {
+								active->childrens.push_back(children);
+								children->parents.push_back(active);
+								break;
+							}
+							children = children->next;
+						}
+						if (children->thisActive != act &&
+							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
+							children->thisBoard[act] == active->thisBoard[act] &&
+							children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter))) {
+							active->childrens.push_back(children);
+							children->parents.push_back(active);
+						}
+						else {
+							children->next = cache[last] = hashTable[hashNum] = new dataSet();
+							deep[last] = deep[first] + 1;
+							active->childrens.push_back(cache[last]);
+							cache[last]->parents.push_back(active);
+							cache[last]->thisBoard[2] = active->thisBoard[2];
+							cache[last]->thisBoard[3] = active->thisBoard[3];
+							cache[last]->thisBoard[act] = active->thisBoard[act];
+							cache[last]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter);
+							last++;
+						}
+					}
+					else {
+						children = cache[last] = hashTable[hashNum] = new dataSet();
+						deep[last] = deep[first] + 1;
+						active->childrens.push_back(children);
+						children->parents.push_back(active);
+						children->thisBoard[2] = active->thisBoard[2];
+						children->thisBoard[3] = active->thisBoard[3];
+						children->thisBoard[act] = active->thisBoard[act];
+						children->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter);
+						last++;
+					}
 					bitTry &= bitTry - 1;
 				} while (bitTry);
 				counter++;
@@ -598,14 +664,50 @@ void getTurn() {
 				bitTry = buf64; 
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					cache[last][2] = cache[first][2];
-					cache[last][3] = cache[first][3];
-					cache[last][act] = cache[first][act];
-					cache[last][1 ^ act] = (cache[first][1 ^ act] | to32(mask)) & ~to32(mask << counter);
-					parent[last] = first;
-					active[last] = 1 ^ act;
-					deep[last] = deep[first] + 1;
-					last++;
+					hashNum = (((emptys | to32(mask)) & ~to32(mask << counter)) ^ emptySimpleReverse) & HASHNUM;
+					if (hashTable[hashNum] != NULL) {
+						children = hashTable[hashNum];
+						while (children->next != NULL) {
+							if (children->thisActive != act &&
+								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
+								children->thisBoard[act] == active->thisBoard[act] &&
+								children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter))) {
+								active->childrens.push_back(children);
+								children->parents.push_back(active);
+								break;
+							}
+							children = children->next;
+						}
+						if (children->thisActive != act &&
+							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
+							children->thisBoard[act] == active->thisBoard[act] &&
+							children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter))) {
+							active->childrens.push_back(children);
+							children->parents.push_back(active);
+						}
+						else {
+							children->next = cache[last] = hashTable[hashNum] = new dataSet();
+							deep[last] = deep[first] + 1;
+							active->childrens.push_back(cache[last]);
+							cache[last]->parents.push_back(active);
+							cache[last]->thisBoard[2] = active->thisBoard[2];
+							cache[last]->thisBoard[3] = active->thisBoard[3];
+							cache[last]->thisBoard[act] = active->thisBoard[act];
+							cache[last]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter);
+							last++;
+						}
+					}
+					else {
+						children = cache[last] = hashTable[hashNum] = new dataSet();
+						deep[last] = deep[first] + 1;
+						active->childrens.push_back(children);
+						children->parents.push_back(active);
+						children->thisBoard[2] = active->thisBoard[2];
+						children->thisBoard[3] = active->thisBoard[3];
+						children->thisBoard[act] = active->thisBoard[act];
+						children->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter);
+						last++;
+					}
 					bitTry &= bitTry - 1;
 				} while (bitTry);
 				counter+=7;
@@ -618,14 +720,50 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					cache[last][2] = cache[first][2];
-					cache[last][3] = cache[first][3];
-					cache[last][act] = cache[first][act];
-					cache[last][1 ^ act] = (cache[first][1 ^ act] | to32(mask)) & ~to32(mask >> counter);
-					parent[last] = first;
-					active[last] = 1 ^ act;
-					deep[last] = deep[first] + 1;
-					last++;
+					hashNum = (((emptys | to32(mask)) & ~to32(mask >> counter)) ^ emptySimpleReverse) & HASHNUM;
+					if (hashTable[hashNum] != NULL) {
+						children = hashTable[hashNum];
+						while (children->next != NULL) {
+							if (children->thisActive != act &&
+								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
+								children->thisBoard[act] == active->thisBoard[act] &&
+								children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter))) {
+								active->childrens.push_back(children);
+								children->parents.push_back(active);
+								break;
+							}
+							children = children->next;
+						}
+						if (children->thisActive != act &&
+							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
+							children->thisBoard[act] == active->thisBoard[act] &&
+							children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter))) {
+							active->childrens.push_back(children);
+							children->parents.push_back(active);
+						}
+						else {
+							children->next = cache[last] = hashTable[hashNum] = new dataSet();
+							deep[last] = deep[first] + 1;
+							active->childrens.push_back(cache[last]);
+							cache[last]->parents.push_back(active);
+							cache[last]->thisBoard[2] = active->thisBoard[2];
+							cache[last]->thisBoard[3] = active->thisBoard[3];
+							cache[last]->thisBoard[act] = active->thisBoard[act];
+							cache[last]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter);
+							last++;
+						}
+					}
+					else {
+						children = cache[last] = hashTable[hashNum] = new dataSet();
+						deep[last] = deep[first] + 1;
+						active->childrens.push_back(children);
+						children->parents.push_back(active);
+						children->thisBoard[2] = active->thisBoard[2];
+						children->thisBoard[3] = active->thisBoard[3];
+						children->thisBoard[act] = active->thisBoard[act];
+						children->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter);
+						last++;
+					}
 					bitTry &= bitTry - 1;
 				} while (bitTry);
 				counter += 7;
@@ -638,14 +776,52 @@ void getTurn() {
 			while (tryLeftUp)
 			{
 				buf = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
-				cache[last][0] = (cache[first][0] | buf) & ~(buf >> 1);
-				cache[last][2] = (cache[first][2] | buf) & ~(buf >> 1);
-				cache[last][1] = cache[first][1];
-				cache[last][3] = cache[first][3];
-				parent[last] = first;
-				active[last] = 0;
-				deep[last] = deep[first] + 1;
-				last++;
+				buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 1);
+				buf32 = singles & buf32_1;
+				hashNum = ((active->thisBoard[1] | buf32_1) ^ ReverseBits((buf32 | active->thisBoard[3]))) & HASHNUM;
+				if (hashTable[hashNum] != NULL) {
+					children = hashTable[hashNum];
+					while (children->next != NULL) {
+						if (children->thisActive != 1 &&  //act === 1, act потомка act === 0
+							children->thisBoard[1] == active->thisBoard[1] && children->thisBoard[3] == active->thisBoard[3] &&
+							children->thisBoard[2] == buf32 &&
+							children->thisBoard[0] == buf32_1) {
+							active->childrens.push_back(children);
+							children->parents.push_back(active);
+							break;
+						}
+						children = children->next;
+					}
+					if (children->thisActive != 1 &&
+						children->thisBoard[1] == active->thisBoard[1] && children->thisBoard[3] == active->thisBoard[3] &&
+						children->thisBoard[2] == buf32 &&
+						children->thisBoard[0] == buf32_1) {
+						active->childrens.push_back(children);
+						children->parents.push_back(active);
+					}
+					else {
+						children->next = cache[last] = hashTable[hashNum] = new dataSet();
+						deep[last] = deep[first] + 1;
+						active->childrens.push_back(cache[last]);
+						cache[last]->parents.push_back(active);
+						cache[last]->thisBoard[1] = active->thisBoard[1];
+						cache[last]->thisBoard[3] = active->thisBoard[3];
+						cache[last]->thisBoard[0] = buf32_1;
+						cache[last]->thisBoard[2] = buf32;
+						last++;
+					}
+				}
+				else {
+					children = cache[last] = hashTable[hashNum] = new dataSet();
+					deep[last] = deep[first] + 1;
+					active->childrens.push_back(children);
+					children->parents.push_back(active);
+					children->thisBoard[1] = active->thisBoard[1];
+					children->thisBoard[3] = active->thisBoard[3];
+					children->thisBoard[2] = buf32;
+					children->thisBoard[0] = buf32_1;
+					last++;
+				}
 				tryLeftUp &= tryLeftUp - 1;
 			}
 			tryRightUp = ((singles & turnRightUp) << 7 | (singles & turnRightUp) >> 25) & emptys;
@@ -653,14 +829,52 @@ void getTurn() {
 			while (tryRightUp)
 			{
 				buf = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
-				cache[last][0] = (cache[first][0] | buf) & ~(buf >> 7 | buf << 25);
-				cache[last][2] = (cache[first][2] | buf) & ~(buf >> 7 | buf << 25);
-				cache[last][1] = cache[first][1];
-				cache[last][3] = cache[first][3];
-				parent[last] = first;
-				active[last] = 0;
-				deep[last] = deep[first] + 1;
-				last++;
+				buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
+				buf32 = singles & buf32_1;
+				hashNum = hashNum = ((active->thisBoard[1] | buf32_1) ^ ReverseBits((buf32 | active->thisBoard[3]))) & HASHNUM;
+				if (hashTable[hashNum] != NULL) {
+					children = hashTable[hashNum];
+					while (children->next != NULL) {
+						if (children->thisActive != 1 &&
+							children->thisBoard[1] == active->thisBoard[1] && children->thisBoard[3] == active->thisBoard[3] &&
+							children->thisBoard[2] == buf32 &&
+							children->thisBoard[0] == buf32_1) {
+							active->childrens.push_back(children);
+							children->parents.push_back(active);
+							break;
+						}
+						children = children->next;
+					}
+					if (children->thisActive != 1 &&
+						children->thisBoard[1] == active->thisBoard[1] && children->thisBoard[3] == active->thisBoard[3] &&
+						children->thisBoard[2] == buf32 &&
+						children->thisBoard[0] == buf32_1) {
+						active->childrens.push_back(children);
+						children->parents.push_back(active);
+					}
+					else {
+						children->next = cache[last] = hashTable[hashNum] = new dataSet();
+						deep[last] = deep[first] + 1;
+						active->childrens.push_back(cache[last]);
+						cache[last]->parents.push_back(active);
+						cache[last]->thisBoard[1] = active->thisBoard[1];
+						cache[last]->thisBoard[3] = active->thisBoard[3];
+						cache[last]->thisBoard[0] = buf32_1;
+						cache[last]->thisBoard[2] = buf32;
+						last++;
+					}
+				}
+				else {
+					children = cache[last] = hashTable[hashNum] = new dataSet();
+					deep[last] = deep[first] + 1;
+					active->childrens.push_back(children);
+					children->parents.push_back(active);
+					children->thisBoard[1] = active->thisBoard[1];
+					children->thisBoard[3] = active->thisBoard[3];
+					children->thisBoard[2] = buf32;
+					children->thisBoard[0] = buf32_1;
+					last++;
+				}
 				tryRightUp &= tryRightUp - 1;
 			}
 		}
@@ -670,14 +884,52 @@ void getTurn() {
 			while (tryRightDown)
 			{
 				buf = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
-				cache[last][1] = (cache[first][1] | buf) & ~(buf << 1);
-				cache[last][3] = (cache[first][3] | buf) & ~(buf << 1);
-				cache[last][0] = cache[first][0];
-				cache[last][2] = cache[first][2];
-				parent[last] = first;
-				active[last] = 1;
-				deep[last] = deep[first] + 1;
-				last++;
+				buf32_1 = (active->thisBoard[1] | buf) & ~(buf >> 1);
+				buf32 = singles & buf32_1;
+				hashNum = ((active->thisBoard[0] | buf32_1) ^ ReverseBits((buf32 | active->thisBoard[2]))) & HASHNUM;
+				if (hashTable[hashNum] != NULL) {
+					children = hashTable[hashNum];
+					while (children->next != NULL) {
+						if (children->thisActive != 0 &&
+							children->thisBoard[0] == active->thisBoard[0] && children->thisBoard[2] == active->thisBoard[2] &&
+							children->thisBoard[1] == buf32_1 &&
+							children->thisBoard[3] == buf32) {
+							active->childrens.push_back(children);
+							children->parents.push_back(active);
+							break;
+						}
+						children = children->next;
+					}
+					if (children->thisActive != 0 &&
+						children->thisBoard[0] == active->thisBoard[0] && children->thisBoard[2] == active->thisBoard[2] &&
+						children->thisBoard[1] == buf32_1 &&
+						children->thisBoard[3] == buf32) {
+						active->childrens.push_back(children);
+						children->parents.push_back(active);
+					}
+					else {
+						children->next = cache[last] = hashTable[hashNum] = new dataSet();
+						deep[last] = deep[first] + 1;
+						active->childrens.push_back(cache[last]);
+						cache[last]->parents.push_back(active);
+						cache[last]->thisBoard[0] = active->thisBoard[0];
+						cache[last]->thisBoard[2] = active->thisBoard[2];
+						cache[last]->thisBoard[1] = buf32_1;
+						cache[last]->thisBoard[3] = buf32;
+						last++;
+					}
+				}
+				else {
+					children = cache[last] = hashTable[hashNum] = new dataSet();
+					deep[last] = deep[first] + 1;
+					active->childrens.push_back(children);
+					children->parents.push_back(active);
+					cache[last]->thisBoard[0] = active->thisBoard[0];
+					cache[last]->thisBoard[2] = active->thisBoard[2];
+					cache[last]->thisBoard[1] = buf32_1;
+					cache[last]->thisBoard[3] = buf32;
+					last++;
+				}
 				tryRightDown &= tryRightDown - 1;
 			}
 			tryLeftDown = ((singles & turnLeftDown) >> 7 | (singles & turnLeftDown) << 25) & emptys;
@@ -685,24 +937,58 @@ void getTurn() {
 			while (tryLeftDown)
 			{
 				buf = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
-				cache[last][1] = (cache[first][1] | buf) & ~(buf << 7 | buf >> 25);
-				cache[last][3] = (cache[first][3] | buf) & ~(buf << 7 | buf >> 25);
-				cache[last][0] = cache[first][0];
-				cache[last][2] = cache[first][2];
-				parent[last] = first;
-				active[last] = 1;
-				deep[last] = deep[first] + 1;
-				last++;
+				buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
+				buf32 = singles & buf32_1;
+				hashNum = ((active->thisBoard[0] | buf32_1) ^ ReverseBits((buf32 | active->thisBoard[2]))) & HASHNUM;
+				if (hashTable[hashNum] != NULL) {
+					children = hashTable[hashNum];
+					while (children->next != NULL) {
+						if (children->thisActive != 0 &&
+							children->thisBoard[0] == active->thisBoard[0] && children->thisBoard[2] == active->thisBoard[2] &&
+							children->thisBoard[1] == buf32_1 &&
+							children->thisBoard[3] == buf32) {
+							active->childrens.push_back(children);
+							children->parents.push_back(active);
+							break;
+						}
+						children = children->next;
+					}
+					if (children->thisActive != 0 &&
+						children->thisBoard[0] == active->thisBoard[0] && children->thisBoard[2] == active->thisBoard[2] &&
+						children->thisBoard[1] == buf32_1 &&
+						children->thisBoard[3] == buf32) {
+						active->childrens.push_back(children);
+						children->parents.push_back(active);
+					}
+					else {
+						children->next = cache[last] = hashTable[hashNum] = new dataSet();
+						deep[last] = deep[first] + 1;
+						active->childrens.push_back(cache[last]);
+						cache[last]->parents.push_back(active);
+						cache[last]->thisBoard[0] = active->thisBoard[0];
+						cache[last]->thisBoard[2] = active->thisBoard[2];
+						cache[last]->thisBoard[1] = buf32_1;
+						cache[last]->thisBoard[3] = buf32;
+						last++;
+					}
+				}
+				else {
+					children = cache[last] = hashTable[hashNum] = new dataSet();
+					deep[last] = deep[first] + 1;
+					active->childrens.push_back(children);
+					children->parents.push_back(active);
+					cache[last]->thisBoard[0] = active->thisBoard[0];
+					cache[last]->thisBoard[2] = active->thisBoard[2];
+					cache[last]->thisBoard[1] = buf32_1;
+					cache[last]->thisBoard[3] = buf32;
+					last++;
+				}
 				tryLeftDown &= tryLeftDown - 1;
 			}
 		}
 		if (!isQueenTurn) { //нельзя походить
-			cache[last][act] = 1;
-			cache[last][act ^ 1] = 0;
-			parent[last] = first;
-			active[last] = 1 ^ act;
-			deep[last] = deep[first] + 1;
-			last++;
+			active->thisBoard[act ^ 1] = active->thisBoard[act ^ 3] = 0;
+			active->thisBoard[act] = active->thisBoard[act ^ 2] = 0xFFFFFFFF;
 		}
 	}
 	first++;
@@ -774,26 +1060,19 @@ void main() {
 	possibleRightDown64 = turnRightDown64 ^ (buf64 << 7) ^ (buf64 << 13) ^ (buf64 << 19) ^ (buf64 << 26) ^ (buf64 << 34) ^ (buf64 << 42);
 	possibleRightUp64 = turnRightUp64 ^ (buf64 << 24) ^ (buf64 << 30) ^ (buf64 << 36) ^ (buf64 << 42) ^ (buf64 << 34) ^ (buf64 << 26) ^ (buf64 << 18);
 	buf32 = square[0] | square[7] | square[8];
-	cache[0][0] = cache[0][2] = buf32 | (buf32 << 6) | (buf32 << 12) | (buf32 << 18);
+	buf32_1 = buf32 | (buf32 << 6) | (buf32 << 12) | (buf32 << 18);
 	buf32 = square[23] | square[24] | square[31];
-	cache[0][1] = cache[0][3] = buf32 | (buf32 << 6) | (buf32 << 12) | (buf32 << 18) | (buf32 >> 26) | (buf32 >> 20) | (buf32 >> 14);
-	active[0] = 1;
-	parent[0] = -1;
+	buf32 = buf32 | (buf32 << 6) | (buf32 << 12) | (buf32 << 18) | (buf32 >> 26) | (buf32 >> 20) | (buf32 >> 14);
+	hashNum = ((buf32 | buf32_1) ^ ReverseBits(buf32 | buf32_1)) & HASHNUM;
+	act = 0;
+	memset(cache, NULL, buffersize);
+	memset(hashTable, NULL, buffersize);
+	cache[0] = hashTable[hashNum] = new dataSet();
+	cache[0]->thisBoard[0] = cache[0]->thisBoard[2] = buf32_1;
+	cache[0]->thisBoard[1] = cache[0]->thisBoard[3] = buf32;
 	deep[0] = 0;
-	//board timeCount = clock();
 	while (deep[first] <= 8) {
-		//showNode(first, first - 1);
 		getTurn();
 	} 
-	cout << first - 1 << endl;
-	int b = 1;
-	for (int i = 1; i < first; i++) {
-		for (int j = i + 1; j < first; j++) {
-			if (active[j] == active[i] && cache[i][0] == cache[j][0] && cache[i][1] == cache[j][1] && cache[i][2] == cache[j][2] && cache[i][3] == cache[j][3]) {
-				b++;
-				j = first;
-			}
-		}
-	}
-	cout << first - b << endl;
+	cout << first - countOf << endl;
 }
