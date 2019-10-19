@@ -1,6 +1,7 @@
 ﻿#include <iostream>
 #include <queue>
 #include <vector>
+#include <intrin.h>
 #include <ctime>
 
 using namespace std;
@@ -16,6 +17,7 @@ board tsquare[32];
 const board possibleLeftUp = 1048343118, possibleLeftDown = 2087865918, possibleRightDown = 4193372472, possibleRightUp = 955904457;
 board all, enemy, emptys, singles, queens, enemySimple, emptySimpleReverse;
 board tryLeftUp, tryRightUp, tryLeftDown, tryRightDown;
+board nexttryLeftUp, nexttryRightUp, nexttryLeftDown, nexttryRightDown;
 ebit bitTry;
 board maxLeftUp, maxLeftDown, maxRightUp, maxRightDown, maxLeftUpEndTurn, maxLeftDownEndTurn, maxRightUpEndTurn, maxRightDownEndTurn;
 board turnLeftUp, turnLeftDown, turnRightUp, turnRightDown;
@@ -23,7 +25,6 @@ board x[7];
 board y[8];
 board x24, x15, x06, y34, y25, y16, y07;
 board buf;
-ebit buf64;
 board buf32, buf32_1, buf32_2, buf32_3;
 board y04, y57, yall;
 ebit bit8y04, bit8y57, bity;
@@ -32,38 +33,8 @@ num first = 0, last = 1;
 ebit mask, buf64No2;
 bool isQueenTurn;
 ebit turnLeftUp64, turnLeftDown64, turnRightUp64, turnRightDown64, possibleLeftUp64, possibleLeftDown64, possibleRightUp64, possibleRightDown64;
-unsigned char counter; 
-bool isTurn;
 
-struct pos {
-	board possingle;
-	board posenemy;
-	board posemptys;
-	pos(board s, board e, board a) {
-		possingle = s;
-		posenemy = e;
-		posemptys = a;
-	}
-};
-
-struct pos64 {
-	ebit possingle;
-	ebit posenemy;
-	ebit posemptys;
-	pos64(board s, board e, board a) {
-		possingle = s;
-		possingle = (possingle << 32) & bit8y57 | possingle & bit8y04;
-		posenemy = e;
-		posenemy = (posenemy << 32) & bit8y57 | posenemy & bit8y04;
-		posemptys = a;
-		posemptys = (posemptys << 32) & bit8y57 | posemptys & bit8y04;
-	}
-	pos64(ebit s, ebit e, ebit a) {
-		possingle = s;
-		posenemy = e;
-		posemptys = a;
-	}
-};
+board tableZobrist[32][5];
 
 const num buffersize = 128 * 1024 * 1024;
 const num HASHNUM = buffersize - 1;
@@ -76,39 +47,42 @@ unsigned char act; //Содержит предыдущую активную ст
 //0 сейчас ход чёрных
 num hashNum; //Данный хэш-номер
 
-board ReverseBits(board argument) {
-	board result = 0;
-	unsigned number = 0;
-	number = (argument << 24) >> 24;
-	number = (number & 0x55) << 1 | (number & 0xAA) >> 1;
-	number = (number & 0x33) << 2 | (number & 0xCC) >> 2;
-	number = (number & 0x0F) << 4 | (number & 0xF0) >> 4;
-	result |= number;
-	result <<= 8;
-	number = (argument << 16) >> 24;
-	number = (number & 0x55) << 1 | (number & 0xAA) >> 1;
-	number = (number & 0x33) << 2 | (number & 0xCC) >> 2;
-	number = (number & 0x0F) << 4 | (number & 0xF0) >> 4;
-	result |= number;
-	result <<= 8;
-	number = (argument << 8) >> 24;
-	number = (number & 0x55) << 1 | (number & 0xAA) >> 1;
-	number = (number & 0x33) << 2 | (number & 0xCC) >> 2;
-	number = (number & 0x0F) << 4 | (number & 0xF0) >> 4;
-	result |= number;
-	result <<= 8;
-	number = argument >> 24;
-	number = (number & 0x55) << 1 | (number & 0xAA) >> 1;
-	number = (number & 0x33) << 2 | (number & 0xCC) >> 2;
-	number = (number & 0x0F) << 4 | (number & 0xF0) >> 4;
-	result |= number;
-	return result;
+unsigned char n;
+
+num randNum;
+
+void initNum() {
+	randNum = rand() % 256;
+	for (num l = 0; l < 3; l++) {
+		randNum <<= 8;
+		randNum += rand() % 256;
+	}
+	randNum &= HASHNUM;
 }
+
+void initZobrist() {
+	for (num i = 0; i < 32; i++) {
+		for (num j = 0; j < 5; j++) {
+			for (int ii = 0; ii <= i; ii++) {
+				for (int jj = 0; jj < j; jj++) {
+					if (tableZobrist[ii][jj] == randNum) {
+						initNum();
+						ii = 0;
+						jj = j;
+					}
+				}
+			}
+			tableZobrist[i][j] = randNum;
+		}
+	}
+}
+
 
 struct dataSet {
 	board thisBoard[4];
 	unsigned char thisActive;
 	dataSet* next;
+	num zobrist;
 	vector <dataSet*> parents;
 	vector <dataSet*> childrens;
 	dataSet() {
@@ -125,6 +99,8 @@ dataSet* cache[buffersize]; //Буфер значений, из которого
 dataSet* active;
 
 dataSet* children;
+
+num phash;
 
 /*
 void is() {
@@ -181,72 +157,96 @@ unsigned char deep[buffersize];
 
 //Хэш-таблица будет существовать для разных уровней??? Т.е. мы сначала проверяем наличие элемента в этом уровне. Потом проверяем наличие элемента в предыдущий уровнях. 
 
-queue<pos> turns;
-queue<pos64> qturns;
-pos current(possibleLeftUp, possibleLeftUp, possibleLeftUp);
-pos64 current64(possibleLeftUp, possibleLeftUp, possibleLeftUp);
-
-void getQueenTurn() {
-	current64 = qturns.front();
-	qturns.pop();
-	isQueenTurn = false;
-	buf64 = (current64.possingle & possibleLeftUp) << 1; //Ходим вверх-влево, оставляем только те клетки, с которых можно рубить
+void getQueenTurn(ebit possingle, ebit posenemy, ebit posemptys, num poshash) {
+	unsigned char counter;
+	num newhash;
+	bool isQueenTurn = true;
+	ebit bitTry, buf64 = (possingle & possibleLeftUp) << 1; //Ходим вверх-влево, оставляем только те клетки, с которых можно рубить
 	while (buf64) { //можно ли срубить чисто теоретически с клеток?
-		bitTry = (buf64 & current64.posenemy) << 1 & current64.posemptys; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
-		isQueenTurn = isQueenTurn || bitTry;
+		bitTry = (buf64 & posenemy) << 1 & posemptys; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
 		counter = 1;
-		while (bitTry) {
-			qturns.push(pos64(bitTry, current64.posenemy & ~(bitTry >> counter), current64.posemptys | bitTry >> (counter + 1)));
-			counter++;
-			bitTry = ((bitTry & turnLeftUp64) << 1) & current64.posemptys;
+		if (bitTry) {
+			isQueenTurn = false;
+			if (to32(bitTry >> 1) & active->thisBoard[act ^ 2]) {
+				newhash = tableZobrist[__lzcnt(bitTry >> 1) % 32][act ^ 2];
+			}
+			else {
+				newhash = tableZobrist[__lzcnt(bitTry >> 1) % 32][act];
+			}
+			do {
+				getQueenTurn(bitTry, posenemy & ~(bitTry >> counter), posemptys, poshash ^ newhash);
+				counter++;
+				bitTry = ((bitTry & turnLeftUp64) << 1) & posemptys;
+			} while (bitTry);
 		}
-		buf64 = (buf64 & possibleLeftUp64 & current64.posemptys) << 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		buf64 = (buf64 & possibleLeftUp64 & posemptys) << 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
 	}
-	buf64 = (current64.possingle & possibleRightDown) >> 1; //Ходим вниз-вправо, оставляем только те клетки, с которых можно рубить
+	buf64 = (possingle & possibleRightDown) >> 1; //Ходим вниз-вправо, оставляем только те клетки, с которых можно рубить
 	while (buf64) { //можно ли срубить чисто теоретически с клеток?
-		bitTry = (buf64 & current64.posenemy) >> 1 & current64.posemptys; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+		bitTry = (buf64 & posenemy) >> 1 & posemptys; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
 		counter = 1;
-		isQueenTurn = isQueenTurn || bitTry;
-		while (bitTry) {
-			qturns.push(pos64(bitTry, current64.posenemy & ~(bitTry << counter), current64.posemptys | bitTry << (counter + 1)));
-			counter++;
-			bitTry = ((bitTry & turnRightDown64) >> 1) & current64.posemptys;
+		if (bitTry) {
+			isQueenTurn = false;
+			if (to32(bitTry << 1) & active->thisBoard[act ^ 2]) {
+				newhash = tableZobrist[__lzcnt(bitTry << 1) % 32][act ^ 2];
+			}
+			else {
+				newhash = tableZobrist[__lzcnt(bitTry << 1) % 32][act];
+			}
+			do {
+				getQueenTurn(bitTry, posenemy & ~(bitTry << counter), posemptys, poshash ^ newhash);
+				counter++;
+				bitTry = ((bitTry & turnRightDown64) >> 1) & posemptys;
+			} while (bitTry);
 		}
-		buf64 = (buf64 & possibleRightDown & current64.posemptys) >> 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		buf64 = (buf64 & possibleRightDown & posemptys) >> 1; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
 	}
-	buf64 = (current64.possingle & possibleRightUp) >> 7; //Ходим вверх-вправо, оставляем только те клетки, с которых можно рубить
+	buf64 = (possingle & possibleRightUp) >> 7; //Ходим вверх-вправо, оставляем только те клетки, с которых можно рубить
 	while (buf64) { //можно ли срубить чисто теоретически с клеток?
-		bitTry = (buf64 & current64.posenemy) >> 7 & current64.posemptys; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+		bitTry = (buf64 & posenemy) >> 7 & posemptys; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
 		counter = 7;
-		isQueenTurn = isQueenTurn || bitTry;
-		while (bitTry) {
-			qturns.push(pos64(bitTry, current64.posenemy & ~(bitTry << counter), current64.posemptys | bitTry << (counter + 7)));
-			counter += 7;
-			bitTry = ((bitTry & turnRightUp64) >> 7) & current64.posemptys;
+		if (bitTry) {
+			isQueenTurn = false;
+			if (to32(bitTry << 7) & active->thisBoard[act ^ 2]) {
+				newhash = tableZobrist[__lzcnt(bitTry << 7) % 32][act ^ 2];
+			}
+			else {
+				newhash = tableZobrist[__lzcnt(bitTry << 7) % 32][act];
+			}
+			do {
+				getQueenTurn(bitTry, posenemy & ~(bitTry << counter), posemptys, poshash ^ newhash);
+				counter += 7;
+				bitTry = ((bitTry & turnRightUp64) >> 7) & posemptys;
+			} while (bitTry);
 		}
-		buf64 = (buf64 & possibleRightUp & current64.posemptys) >> 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		buf64 = (buf64 & possibleRightUp & posemptys) >> 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
 	}
-	buf64 = (current64.possingle & possibleLeftDown) << 7; //Ходим вниз-влево, оставляем только те клетки, с которых можно рубить
+	buf64 = (possingle & possibleLeftDown) << 7; //Ходим вниз-влево, оставляем только те клетки, с которых можно рубить
 	while (buf64) { //можно ли срубить чисто теоретически с клеток?
-		bitTry = (buf64 & current64.posenemy) << 7 & current64.posemptys; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
+		bitTry = (buf64 & posenemy) << 7 & posemptys; //можно ли срубить? (конечное положение)(есть ли враг на текущей клетке, и пуста ли следущая клетка)
 		counter = 7;
-		isQueenTurn = isQueenTurn || bitTry;
-		while (bitTry) {
-			qturns.push(pos64(bitTry, current64.posenemy & ~(bitTry >> counter), current64.posemptys | bitTry >> (counter + 7)));
-			counter += 7;
-			bitTry = ((bitTry & turnLeftDown64) << 7) & current64.posemptys;
+		if (bitTry) {
+			isQueenTurn = false;
+			if (to32(bitTry << 7) & active->thisBoard[act ^ 2]) {
+				newhash = tableZobrist[__lzcnt(bitTry >> 7) % 32][act ^ 2];
+			}
+			else {
+				newhash = tableZobrist[__lzcnt(bitTry >> 7) % 32][act];
+			}
+			do {
+				getQueenTurn(bitTry, posenemy & ~(bitTry >> counter), posemptys, poshash ^ newhash);
+				counter += 7;
+				bitTry = ((bitTry & turnLeftDown64) << 7) & posemptys;
+			} while (bitTry);
 		}
-		buf64 = (buf64 & possibleLeftDown & current64.posemptys) << 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
+		buf64 = (buf64 & possibleLeftDown & posemptys) << 7; //Текущая клетка пуста, со следущей клетки чисто теоретически можно срубить
 	}
 	if (isQueenTurn) {
-		getQueenTurn();
-	}
-	else {
-		buf32_1 = active->thisBoard[1 ^ act] & ~to32(current64.posemptys) | to32(current64.possingle); //0 1
-		buf32 = active->thisBoard[3 ^ act] & ~(to32(current64.posemptys) | to32(current64.possingle)); //2 3
-		buf32_2 = active->thisBoard[act] & to32(current64.posenemy); //1 0
-		buf32_3 = active->thisBoard[act ^ 2] & to32(current64.posenemy); //3 2
-		hashNum = ((buf32_2 | buf32_1) ^ ReverseBits((buf32 | buf32_3))) & HASHNUM;
+		buf32_1 = active->thisBoard[1 ^ act] & ~to32(posemptys) | to32(possingle); //0 1
+		buf32 = active->thisBoard[3 ^ act] & ~(to32(posemptys) | to32(possingle)); //2 3
+		buf32_2 = active->thisBoard[act] & to32(posenemy); //1 0
+		buf32_3 = active->thisBoard[act ^ 2] & to32(posenemy); //3 2
+		hashNum = poshash ^ tableZobrist[__lzcnt(possingle) % 32][act ^ 1];
 		if (hashTable[hashNum] != NULL) {
 			children = hashTable[hashNum];
 			while (children->next != NULL) {
@@ -287,73 +287,90 @@ void getQueenTurn() {
 			children->thisBoard[act ^ 2] = buf32_3;
 			children->thisBoard[act ^ 3] = buf32;
 			last++;
-		}
-		if (!qturns.empty()) {
-			getQueenTurn();
 		}
 	}
 }
 
-void next() {
-	current = turns.front();
-	turns.pop();
-	tryLeftUp = (((current.possingle & possibleLeftUp) << 1 & current.posenemy) << 1) & current.posemptys;
-	tryRightDown = (((current.possingle & possibleRightDown) >> 1 & current.posenemy) >> 1) & current.posemptys;
-	buf32 = ((current.possingle & possibleRightUp) << 7 | (current.possingle & possibleRightUp) >> 25) & current.posenemy;
-	tryRightUp = ((buf32 << 7) | (buf32 >> 25)) & current.posemptys;
-	buf32 = ((current.possingle & possibleLeftDown) >> 7 | (current.possingle & possibleLeftDown) << 25) & current.posenemy;
-	tryLeftDown = ((buf32 >> 7) | (buf32 << 25)) & current.posemptys;
-	isTurn = false;
-	if (tryLeftUp || tryLeftDown || tryRightUp || tryRightDown) {
-		if (tryLeftUp) {
-			if (act && (current.possingle & maxLeftUp)) {
-				isQueenTurn = true;
-				qturns.push(pos64(current.possingle << 2, current.posenemy & ~(current.possingle << 1), current.posemptys | current.possingle));
+void next(board possingle, board posenemy, board posemptys, num poshash) {
+	board nexttryLeftUp = (((possingle & possibleLeftUp) << 1 & posenemy) << 1) & posemptys;
+	board nexttryRightDown = (((possingle & possibleRightDown) >> 1 & posenemy) >> 1) & posemptys;
+	buf32 = ((possingle & possibleRightUp) << 7 | (possingle & possibleRightUp) >> 25) & posenemy;
+	board nexttryRightUp = ((buf32 << 7) | (buf32 >> 25)) & posemptys;
+	buf32 = ((possingle & possibleLeftDown) >> 7 | (possingle & possibleLeftDown) << 25) & posenemy;
+	board nexttryLeftDown = ((buf32 >> 7) | (buf32 << 25)) & posemptys;
+	if (nexttryLeftUp || nexttryLeftDown || nexttryRightUp || nexttryRightDown) {
+		if (nexttryLeftUp) {
+			if (act && (possingle & maxLeftUp)) {
+				getQueenTurn(possingle << 2, posenemy & ~(possingle << 1), posemptys, poshash ^ tableZobrist[n + 1][act]);
 			}
 			else {
-				isTurn = true;
-				turns.push(pos(current.possingle << 2, current.posenemy & ~(current.possingle << 1), current.posemptys | current.possingle));
+				n = __lzcnt(possingle);
+				if (active->thisBoard[act ^ 2] & (possingle << 1)) {
+					next(possingle << 2, posenemy & ~(possingle << 1), posemptys, poshash ^ tableZobrist[n - 1][act]);
+				}
+				else{
+					next(possingle << 2, posenemy & ~(possingle << 1), posemptys, poshash ^ tableZobrist[n - 1][act ^ 2]);
+				}
 			}
 		}
-		if (tryLeftDown) {
-			if (!act && (current.possingle & maxLeftDown)) {
-				isQueenTurn = true;
-				qturns.push(pos64((current.possingle >> 14) | (current.possingle << 18), current.posenemy & ~((current.possingle >> 7) | (current.possingle << 25)), current.posemptys | current.possingle));
+		if (nexttryLeftDown) {
+			if (!act && (possingle & maxLeftDown)) {
+				getQueenTurn((possingle >> 14) | (possingle << 18), posenemy & ~((possingle >> 7) | (possingle << 25)), posemptys, poshash ^ tableZobrist[n + 1][act]);
 			}
 			else {
-				isTurn = true;
-				turns.push(pos((current.possingle >> 14) | (current.possingle << 18), current.posenemy & ~((current.possingle >> 7) | (current.possingle << 25)), current.posemptys | current.possingle));
+				n = __lzcnt(possingle);
+				if (active->thisBoard[act ^ 2] & (possingle >> 7 | possingle << 25)) {
+					next(possingle >> 14, posenemy & ~((possingle >> 7) | (possingle << 25)), posemptys, poshash ^ tableZobrist[n < 26 ? n + 7 : n - 25][act]);
+				}
+				else {
+					next(possingle >> 14 | possingle << 18, posenemy & ~((possingle >> 7) | (possingle << 25)), posemptys, poshash ^ tableZobrist[n < 26 ? n + 7 : n - 25][act ^ 2]);
+				}
 			}
 		}
-		if (tryRightDown) {
-			if (!act && (current.possingle & maxRightDown)) {
-				isQueenTurn = true;
-				qturns.push(pos64(current.possingle >> 2, current.posenemy & ~(current.possingle >> 1), current.posemptys | current.possingle));
+		if (nexttryRightDown) {
+			if (!act && (possingle & maxRightDown)) {
+				getQueenTurn(possingle >> 2, posenemy & ~(possingle >> 1), posemptys, poshash ^ tableZobrist[n + 1][act]);
 			}
 			else {
-				isTurn = true;
-				turns.push(pos(current.possingle >> 2, current.posenemy & ~(current.possingle >> 1), current.posemptys | current.possingle));
+				n = __lzcnt(possingle);
+				if (active->thisBoard[act ^ 2] & (possingle >> 1)) {
+					next(possingle >> 2, posenemy & ~(possingle >> 1), posemptys, poshash ^ tableZobrist[n + 1][act]);
+				}
+				else {
+					next(possingle >> 2, posenemy & ~(possingle >> 1), posemptys, poshash ^ tableZobrist[n + 1][act ^ 2]);
+				}
 			}
 		}
-		if (tryRightUp) {
-			if (act && (current.possingle & maxRightUp)) {
-				isQueenTurn = true;
-				qturns.push(pos64((current.possingle << 14) | (current.possingle >> 18), current.posenemy & ~((current.possingle << 7) | (current.possingle >> 25)), current.posemptys | current.possingle));
+		if (nexttryRightUp) {
+			n = __lzcnt(possingle);
+			if (act && (possingle & maxRightUp)) {
+				if (active->thisBoard[3] & (possingle << 7 | possingle >> 25)) {
+					getQueenTurn((possingle << 14) | (possingle >> 18), posenemy & ~((possingle << 7) | (possingle >> 25)), posemptys,
+						poshash ^ tableZobrist[n > 6 ? n - 7 : n + 25][1] ^ tableZobrist[n][0]);
+				}
+				else {
+					getQueenTurn((possingle << 14) | (possingle >> 18), posenemy & ~((possingle << 7) | (possingle >> 25)), posemptys,
+						poshash ^ tableZobrist[n > 6 ? n - 7 : n + 25][3] ^ tableZobrist[n][0]);
+				}
 			}
 			else {
-				isTurn = true;
-				turns.push(pos((current.possingle << 14) | (current.possingle >> 18), current.posenemy & ~((current.possingle << 7) | (current.possingle >> 25)), current.posemptys | current.possingle));
+				if (active->thisBoard[act ^ 2] & (possingle << 7 | possingle >> 25)) {
+					next(possingle << 14 | possingle >> 18, posenemy & ~((possingle << 7) | (possingle >> 25)), posemptys, 
+						poshash ^ tableZobrist[n > 6 ? n - 7 : n + 25][act]);
+				}
+				else {
+					next(possingle << 14 | possingle >> 18, posenemy & ~((possingle << 7) | (possingle >> 25)), posemptys, 
+						poshash ^ tableZobrist[n > 6 ? n - 7 : n + 25][act ^ 2]);
+				}
 			}
 		}
-		if (isTurn)
-			next();
 	}
 	else {
-		buf32_1 = (active->thisBoard[act ^ 1] | current.possingle) & ~current.posemptys; //0 1
-		buf32 = (singles | current.possingle) & ~current.posemptys; //2 3
-		buf32_2 = active->thisBoard[act] & current.posenemy; //1 0
-		buf32_3 = active->thisBoard[act ^ 2] & current.posenemy; //3 2
-		hashNum = ((buf32_2 | buf32_1) ^ ReverseBits((buf32 | buf32_3))) & HASHNUM;
+		buf32_1 = active->thisBoard[act ^ 1] & ~posemptys | possingle; //0 1
+		buf32 = active->thisBoard[act ^ 3] & ~posemptys | possingle; //2 3
+		buf32_2 = active->thisBoard[act] & posenemy; //1 0
+		buf32_3 = active->thisBoard[act ^ 2] & posenemy; //3 2
+		hashNum = poshash ^ tableZobrist[__lzcnt(possingle)][act ^ 1];
 		if (hashTable[hashNum] != NULL) {
 			children = hashTable[hashNum];
 			while (children->next != NULL) {
@@ -381,6 +398,7 @@ void next() {
 				cache[last]->thisBoard[act ^ 1] = buf32_1;
 				cache[last]->thisBoard[act ^ 2] = buf32_3;
 				cache[last]->thisBoard[act ^ 3] = buf32;
+				cache[last]->zobrist = hashNum;
 				last++;
 			}
 		}
@@ -393,10 +411,8 @@ void next() {
 			children->thisBoard[act ^ 1] = buf32_1;
 			children->thisBoard[act ^ 2] = buf32_3;
 			children->thisBoard[act ^ 3] = buf32;
+			children->zobrist = hashNum;
 			last++;
-		}
-		if (!turns.empty()) {
-			next();
 		}
 	}
 }
@@ -419,6 +435,7 @@ void getTurn() {
 		first++;
 		return;
 	}
+	phash = active->zobrist;
 	all = active->thisBoard[0] | active->thisBoard[1];
 	emptys = ~all;
 	isQueenTurn = false;
@@ -596,14 +613,16 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					hashNum = (((all | to32(mask)) & ~to32(mask >> counter)) ^ emptySimpleReverse) & HASHNUM;
+					n = __lzcnt(mask);
+					hashNum = phash ^ tableZobrist[n % 32][act ^ 3] ^ tableZobrist[(n - counter) % 32][act ^ 3];
 					if (hashTable[hashNum] != NULL) {
 						children = hashTable[hashNum];
+						buf32 = ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter));
 						while (children -> next != NULL) {
 							if (children->thisActive != act &&
 								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
 								children->thisBoard[act] == active->thisBoard[act] && 
-								children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter))) {
+								children->thisBoard[act ^ 1] == buf32) {
 								active->childrens.push_back(children);
 								children->parents.push_back(active);
 								break;
@@ -613,7 +632,7 @@ void getTurn() {
 						if (children->thisActive != act &&
 							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
 							children->thisBoard[act] == active->thisBoard[act] &&
-							children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter))) {
+							children->thisBoard[act ^ 1] == buf32) {
 							active->childrens.push_back(children);
 							children->parents.push_back(active);
 						}
@@ -625,7 +644,7 @@ void getTurn() {
 							cache[last]->thisBoard[2] = active->thisBoard[2];
 							cache[last]->thisBoard[3] = active->thisBoard[3];
 							cache[last]->thisBoard[act] = active->thisBoard[act];
-							cache[last]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter);
+							cache[last]->thisBoard[act ^ 1] = buf32;
 							last++;
 						}
 					}
@@ -652,14 +671,16 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					hashNum = (((all | to32(mask)) & ~to32(mask << counter)) ^ emptySimpleReverse) & HASHNUM;
+					n = __lzcnt(mask);
+					hashNum = phash ^ tableZobrist[n % 32][act ^ 3] ^ tableZobrist[(n + counter) % 32][act ^ 3];
 					if (hashTable[hashNum] != NULL) {
+						buf32 = ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter));
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
 							if (children->thisActive != act &&
 								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
 								children->thisBoard[act] == active->thisBoard[act] &&
-								children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter))) {
+								children->thisBoard[act ^ 1] == buf32) {
 								active->childrens.push_back(children);
 								children->parents.push_back(active);
 								break;
@@ -669,7 +690,7 @@ void getTurn() {
 						if (children->thisActive != act &&
 							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
 							children->thisBoard[act] == active->thisBoard[act] &&
-							children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter))) {
+							children->thisBoard[act ^ 1] == buf32) {
 							active->childrens.push_back(children);
 							children->parents.push_back(active);
 						}
@@ -681,7 +702,7 @@ void getTurn() {
 							cache[last]->thisBoard[2] = active->thisBoard[2];
 							cache[last]->thisBoard[3] = active->thisBoard[3];
 							cache[last]->thisBoard[act] = active->thisBoard[act];
-							cache[last]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter);
+							cache[last]->thisBoard[act ^ 1] = buf32;
 							last++;
 						}
 					}
@@ -708,14 +729,16 @@ void getTurn() {
 				bitTry = buf64; 
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					hashNum = (((all | to32(mask)) & ~to32(mask << counter)) ^ emptySimpleReverse) & HASHNUM;
+					n = __lzcnt(mask);
+					hashNum = phash ^ tableZobrist[n % 32][act ^ 3] ^ tableZobrist[(n - counter) % 32][act ^ 3];
 					if (hashTable[hashNum] != NULL) {
+						buf32 = ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter));
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
 							if (children->thisActive != act &&
 								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
 								children->thisBoard[act] == active->thisBoard[act] &&
-								children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter))) {
+								children->thisBoard[act ^ 1] == buf32) {
 								active->childrens.push_back(children);
 								children->parents.push_back(active);
 								break;
@@ -725,7 +748,7 @@ void getTurn() {
 						if (children->thisActive != act &&
 							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
 							children->thisBoard[act] == active->thisBoard[act] &&
-							children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter))) {
+							children->thisBoard[act ^ 1] == buf32) {
 							active->childrens.push_back(children);
 							children->parents.push_back(active);
 						}
@@ -737,7 +760,7 @@ void getTurn() {
 							cache[last]->thisBoard[2] = active->thisBoard[2];
 							cache[last]->thisBoard[3] = active->thisBoard[3];
 							cache[last]->thisBoard[act] = active->thisBoard[act];
-							cache[last]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask << counter);
+							cache[last]->thisBoard[act ^ 1] = buf32;
 							last++;
 						}
 					}
@@ -764,14 +787,16 @@ void getTurn() {
 				bitTry = buf64;
 				do {
 					mask = bitTry ^ (bitTry & (bitTry - 1));
-					hashNum = (((all | to32(mask)) & ~to32(mask >> counter)) ^ emptySimpleReverse) & HASHNUM;
+					n = __lzcnt(mask);
+					hashNum = phash ^ tableZobrist[n%32][act ^ 3] ^ tableZobrist[(n + counter)%32][act ^ 3];
 					if (hashTable[hashNum] != NULL) {
+						buf32 = ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter));
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
 							if (children->thisActive != act &&
 								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
 								children->thisBoard[act] == active->thisBoard[act] &&
-								children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter))) {
+								children->thisBoard[act ^ 1] == buf32) {
 								active->childrens.push_back(children);
 								children->parents.push_back(active);
 								break;
@@ -781,7 +806,7 @@ void getTurn() {
 						if (children->thisActive != act &&
 							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
 							children->thisBoard[act] == active->thisBoard[act] &&
-							children->thisBoard[act ^ 1] == ((active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter))) {
+							children->thisBoard[act ^ 1] == buf32) {
 							active->childrens.push_back(children);
 							children->parents.push_back(active);
 						}
@@ -793,7 +818,7 @@ void getTurn() {
 							cache[last]->thisBoard[2] = active->thisBoard[2];
 							cache[last]->thisBoard[3] = active->thisBoard[3];
 							cache[last]->thisBoard[act] = active->thisBoard[act];
-							cache[last]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | to32(mask)) & ~to32(mask >> counter);
+							cache[last]->thisBoard[act ^ 1] = buf32;
 							last++;
 						}
 					}
@@ -820,10 +845,11 @@ void getTurn() {
 			while (tryLeftUp)
 			{
 				buf = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
-				buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 1);
-				buf32 = (singles | buf) & ~(buf >> 1);
-				hashNum = ((active->thisBoard[1] | buf32_1) ^ ReverseBits(buf32 | active->thisBoard[3])) & HASHNUM;
+				n = __lzcnt(buf);
+				hashNum = phash ^ tableZobrist[n][0] ^ tableZobrist[n - 1][0];
 				if (hashTable[hashNum] != NULL) {
+					buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 1);
+					buf32 = (singles | buf) & ~(buf >> 1);
 					children = hashTable[hashNum];
 					while (children->next != NULL) {
 						if (children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
@@ -862,8 +888,8 @@ void getTurn() {
 					children->parents.push_back(active);
 					children->thisBoard[1] = active->thisBoard[1];
 					children->thisBoard[3] = active->thisBoard[3];
-					children->thisBoard[2] = buf32;
-					children->thisBoard[0] = buf32_1;
+					children->thisBoard[2] = (singles | buf) & ~(buf >> 1);
+					children->thisBoard[0] = (active->thisBoard[0] | buf) & ~(buf >> 1);
 					last++;
 				}
 				tryLeftUp &= tryLeftUp - 1;
@@ -873,10 +899,11 @@ void getTurn() {
 			while (tryRightUp)
 			{
 				buf = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
-				buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
-				buf32 = (singles | buf) & ~(buf >> 7 | buf << 25);
-				hashNum = hashNum = ((active->thisBoard[1] | buf32_1) ^ ReverseBits((buf32 | active->thisBoard[3]))) & HASHNUM;
+				n = __lzcnt(buf);
+				hashNum = phash ^ tableZobrist[n > 6 ? n - 7 : 25 + n][0] ^ tableZobrist[n][0];
 				if (hashTable[hashNum] != NULL) {
+					buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
+					buf32 = (singles | buf) & ~(buf >> 7 | buf << 25);
 					children = hashTable[hashNum];
 					while (children->next != NULL) {
 						if (children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
@@ -915,8 +942,8 @@ void getTurn() {
 					children->parents.push_back(active);
 					children->thisBoard[1] = active->thisBoard[1];
 					children->thisBoard[3] = active->thisBoard[3];
-					children->thisBoard[2] = buf32;
-					children->thisBoard[0] = buf32_1;
+					children->thisBoard[2] = (singles | buf) & ~(buf >> 7 | buf << 25);
+					children->thisBoard[0] = (active->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
 					last++;
 				}
 				tryRightUp &= tryRightUp - 1;
@@ -928,10 +955,11 @@ void getTurn() {
 			while (tryRightDown)
 			{
 				buf = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
-				buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 1);
-				buf32 = (singles | buf) & ~(buf << 1);
-				hashNum = ((active->thisBoard[0] | buf32_1) ^ ReverseBits((buf32 | active->thisBoard[2]))) & HASHNUM;
+				n = __lzcnt(buf);
+				hashNum = phash ^ tableZobrist[n][1] ^ tableZobrist[n + 1][1];
 				if (hashTable[hashNum] != NULL) {
+					buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 1);
+					buf32 = (singles | buf) & ~(buf << 1);
 					children = hashTable[hashNum];
 					while (children->next != NULL) {
 						if (children->thisBoard[1] == buf32_1 &&
@@ -972,8 +1000,8 @@ void getTurn() {
 					children->parents.push_back(active);
 					cache[last]->thisBoard[0] = active->thisBoard[0];
 					cache[last]->thisBoard[2] = active->thisBoard[2];
-					cache[last]->thisBoard[1] = buf32_1;
-					cache[last]->thisBoard[3] = buf32;
+					cache[last]->thisBoard[1] = (active->thisBoard[1] | buf) & ~(buf << 1);
+					cache[last]->thisBoard[3] = (singles | buf) & ~(buf << 1);
 					last++;
 				}
 				tryRightDown &= tryRightDown - 1;
@@ -983,10 +1011,11 @@ void getTurn() {
 			while (tryLeftDown)
 			{
 				buf = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
-				buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
-				buf32 = (singles | buf) & ~(buf << 7 | buf >> 25);
-				hashNum = ((active->thisBoard[0] | buf32_1) ^ ReverseBits((buf32 | active->thisBoard[2]))) & HASHNUM;
+				n = __lzcnt(buf);
+				hashNum = phash ^ tableZobrist[n][1] ^ tableZobrist[n < 25 ? n + 7 : n - 25][1];
 				if (hashTable[hashNum] != NULL) {
+					buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
+					buf32 = (singles | buf) & ~(buf << 7 | buf >> 25);
 					children = hashTable[hashNum];
 					while (children->next != NULL) {
 						if (children->thisBoard[1] == buf32_1 &&
@@ -1027,8 +1056,8 @@ void getTurn() {
 					children->parents.push_back(active);
 					cache[last]->thisBoard[0] = active->thisBoard[0];
 					cache[last]->thisBoard[2] = active->thisBoard[2];
-					cache[last]->thisBoard[1] = buf32_1;
-					cache[last]->thisBoard[3] = buf32;
+					cache[last]->thisBoard[1] = (active->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
+					cache[last]->thisBoard[3] = (singles | buf) & ~(buf << 7 | buf >> 25);
 					last++;
 				}
 				tryLeftDown &= tryLeftDown - 1;
@@ -1103,7 +1132,15 @@ void main() {
 	buf32_1 = buf32 | (buf32 << 6) | (buf32 << 12) | (buf32 << 18);
 	buf32 = square[23] | square[24] | square[31];
 	buf32 = buf32 | (buf32 << 6) | (buf32 << 12) | (buf32 << 18) | (buf32 >> 26) | (buf32 >> 20) | (buf32 >> 14);
-	hashNum = ((buf32 | buf32_1) ^ ReverseBits(buf32 | buf32_1)) & HASHNUM;
+	initZobrist();
+	hashNum = tableZobrist[31-31][1] ^ tableZobrist[31-5][1] ^ tableZobrist[31-11][1] ^ tableZobrist[31-17][1] ^
+		tableZobrist[31-24][1] ^ tableZobrist[31-30][1] ^ tableZobrist[31-4][1] ^ tableZobrist[31-10][1] ^
+		tableZobrist[31-23][1] ^ tableZobrist[31-29][1] ^ tableZobrist[31-3][1] ^ tableZobrist[31-9][1] ^
+		tableZobrist[31-16][4] ^ tableZobrist[31-22][4] ^ tableZobrist[31-28][4] ^ tableZobrist[31-2][4] ^
+		tableZobrist[31-15][4] ^ tableZobrist[31-21][4] ^ tableZobrist[31-27][4] ^ tableZobrist[31-1][4] ^
+		tableZobrist[31-8][0] ^ tableZobrist[31-14][0] ^ tableZobrist[31-20][0] ^ tableZobrist[31-26][0] ^
+		tableZobrist[31-7][0] ^ tableZobrist[31-13][0] ^ tableZobrist[31-19][0] ^ tableZobrist[31-25][0] ^
+		tableZobrist[31-0][0] ^ tableZobrist[31-6][0] ^ tableZobrist[31-12][0] ^ tableZobrist[31-18][0];
 	act = 0;
 	memset(cache, NULL, buffersize);
 	memset(hashTable, NULL, buffersize);
@@ -1111,18 +1148,32 @@ void main() {
 	cache[0]->thisBoard[0] = cache[0]->thisBoard[2] = buf32_1;
 	cache[0]->thisBoard[1] = cache[0]->thisBoard[3] = buf32;
 	deep[0] = 0;
-	int dp = 12;
-	num starttime = time(NULL);
-	while (deep[first] <= dp) {
+	//num starttime = time(NULL);
+	while (deep[first] <= 9) {
 		getTurn();
 	}
-	num endtime = time(NULL);
+	//num endtime = time(NULL);
 	cout << first - 1 << endl;
+	int ji = 0;
+	int jji = 0;
 	//memset(kkk, 0, 5);
 	//memset(kkk1, 0, 5);
 	//ish();
 	//cout << endl << kkk[0] << endl << kkk[1] << endl << kkk[2] << endl << kkk[3] << endl << kkk[4] << endl << endl;
 	//cout << endl << kkk1[0] << endl << kkk1[1] << endl << kkk1[2] << endl << kkk1[3] << endl << kkk1[4] << endl << endl;
-	cout << endtime - starttime;
+	for (int jj = 0; jj < buffersize; jj++) {
+		if (hashTable[jj] == NULL) {
+			ji++;
+		}
+		else {
+			dataSet* ioi = hashTable[jj];
+			while (ioi != NULL) {
+				jji++;
+				ioi = ioi->next;
+			}
+		}
+	}
+	//cout << endtime - starttime << endl;
+	cout << endl << last << endl << jji << endl << ji << endl << buffersize - ji << endl;
 	system("pause");
 }

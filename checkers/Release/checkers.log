@@ -1,5 +1,7 @@
-﻿  Создание кода
-  0 of 204 functions ( 0.0%) were compiled, the rest were copied from previous compilation.
+﻿  checkers.cpp
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(1045,13): warning C4326:  возвращаемый тип "main" должен быть "int", а не "void"
+  Создание кода
+  1 of 203 functions ( 0.5%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
     0 functions had inline decision re-evaluated but remain unchanged
   Создание кода завершено
