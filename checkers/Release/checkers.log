@@ -1,7 +1,10 @@
 ﻿  checkers.cpp
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(72,17): warning C4244: инициализация: преобразование "unsigned int" в "float", возможна потеря данных
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(74,20): warning C4244: инициализация: преобразование "unsigned int" в "float", возможна потеря данных
+C:\Users\sshha\source\repos\checkers\checkers\checkers.cpp(1164,17): warning C4244: return: преобразование "int" в "float", возможна потеря данных
   Создание кода
-  5 of 86 functions ( 5.8%) were compiled, the rest were copied from previous compilation.
+  2 of 87 functions ( 2.3%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    1 functions had inline decision re-evaluated but remain unchanged
+    3 functions had inline decision re-evaluated but remain unchanged
   Создание кода завершено
   checkers.vcxproj -> C:\Users\sshha\source\repos\checkers\Release\checkers.exe

@@ -1,7 +1,5 @@
 ﻿#include <iostream>
-#include <queue>
 #include <intrin.h>
-#include <ctime>
 #include <vector>
 
 using namespace std;
@@ -26,7 +24,6 @@ board nexttryLeftUp, nexttryRightUp, nexttryLeftDown, nexttryRightDown;
 board buf;
 board buf32_1, buf32_2, buf32_3;
 ebit queens64, enemy64, emptys64;
-num first, last;
 ebit mask, buf64No2;
 num stokehash;
 
@@ -34,7 +31,7 @@ const board x1 = 266305, x2 = 34087040, x3 = 68174080, x4 = 136347650, x5 = 2726
 
 board tableZobrist[32][5];
 
-const num buffersize = 16 * 1024 * 1024;
+const num buffersize = 64 * 1024 * 1024;
 const num HASHNUM = buffersize - 1;
 //0 - все шашки белых
 //1 - все шашки чёхных
@@ -68,17 +65,20 @@ void initZobrist() {
 struct Node {
 	board thisBoard[4];
 	Node* next;
-	uchar thisActive;
+	uchar thisAct;
+	bool isTerminal;
 	vector<Node*> childrens;
-	char getvalue() {
-		return 30 * (__popcnt(thisBoard[0]) - __popcnt(thisBoard[1])) - 14 * (__popcnt(thisBoard[2] & x7) - __popcnt(thisBoard[3] & x2)) - 
-			15 * (__popcnt(thisBoard[2] & x6) - __popcnt(thisBoard[3] & x3)) - 16 * (__popcnt(thisBoard[2] & x5) - __popcnt(thisBoard[3] & x4)) -
-			- 17 * (__popcnt(thisBoard[2] & x4) - __popcnt(thisBoard[3] & x5)) - 18 * (__popcnt(thisBoard[2] & x3) - __popcnt(thisBoard[3] & x6)) -
-			19 * (__popcnt(thisBoard[2] & x2) - __popcnt(thisBoard[3] & x7)) - 20 * (__popcnt(thisBoard[2] & x1) - __popcnt(thisBoard[3] & x8));
+	float getvalue() {
+		float myvalue = 30 * __popcnt(thisBoard[0]) - 14 * __popcnt(thisBoard[2] & x7) - 15 * __popcnt(thisBoard[2] & x6) - 16 * __popcnt(thisBoard[2] & x5) -
+			+17 * __popcnt(thisBoard[2] & x4) - 18 * __popcnt(thisBoard[2] & x3) - 19 * __popcnt(thisBoard[2] & x2) - 20 * __popcnt(thisBoard[2] & x1);
+		float enemyvalue = 30 * __popcnt(thisBoard[1]) - 14 * __popcnt(thisBoard[3] & x2) - 15 * __popcnt(thisBoard[3] & x3) - 16 * __popcnt(thisBoard[3] & x4) -
+			+17 * __popcnt(thisBoard[3] & x5) - 18 * __popcnt(thisBoard[3] & x6) - 19 * __popcnt(thisBoard[3] & x7) - 20 * __popcnt(thisBoard[3] & x8);
+		return 1 - 2 * enemyvalue / (myvalue + enemyvalue);
 	}
 	Node() {
 		next = NULL;
-		thisActive = 1 ^ act;
+		thisAct = 1 ^ act;
+		isTerminal = false;
 	}
 	Node(board b0, board b1, board b2, board b3) {
 		thisBoard[0] = b0;
@@ -86,16 +86,18 @@ struct Node {
 		thisBoard[2] = b2;
 		thisBoard[3] = b3;
 		next = NULL;
-		thisActive = 1 ^ act;
+		thisAct = 1 ^ act;
+		isTerminal = false;
 	}
 };
 
+void printNode(Node* element) {
+	cout << element->thisBoard[0] << " " << element->thisBoard[1] << " " << element->thisBoard[2] << " " << element->thisBoard[3] << endl;
+}
+
 Node* hashTable[buffersize];
-Node* cache[buffersize]; //Буфер значений, из которого берём следущий элемент для просчёта
-Node* active;
 Node* children;
 num phash;
-uchar deep[buffersize];
 
 board to32(ebit bit64) {
 	return (board)(((bit64 & bit8y57) >> 32) | bit64 & bit8y04);
@@ -106,7 +108,7 @@ ebit to64(board bit32) {
 	return (rez << 32) & bit8y57 | rez & bit8y04;
 }
 
-void getQueenTurn(ebit possingle, ebit posenemy, ebit posemptys) {
+void getQueenTurn(Node* element, ebit possingle, ebit posenemy, ebit posemptys) {
 	uchar counter;
 	bool isQueenTurn = true;
 	ebit bitTry, buf64 = (possingle & possibleLeftUp64) << 1; //Ходим вверх-влево, оставляем только те клетки, с которых можно рубить
@@ -116,7 +118,7 @@ void getQueenTurn(ebit possingle, ebit posenemy, ebit posemptys) {
 		if (bitTry) {
 			isQueenTurn = false;
 			do {
-				getQueenTurn(bitTry, posenemy & ~(bitTry >> counter), posemptys);
+				getQueenTurn(element, bitTry, posenemy & ~(bitTry >> counter), posemptys);
 				counter++;
 				bitTry = ((bitTry & turnLeftUp64) << 1) & posemptys;
 			} while (bitTry);
@@ -130,7 +132,7 @@ void getQueenTurn(ebit possingle, ebit posenemy, ebit posemptys) {
 		if (bitTry) {
 			isQueenTurn = false;
 			do {
-				getQueenTurn(bitTry, posenemy & ~(bitTry << counter), posemptys);
+				getQueenTurn(element, bitTry, posenemy & ~(bitTry << counter), posemptys);
 				counter++;
 				bitTry = ((bitTry & turnRightDown64) >> 1) & posemptys;
 			} while (bitTry);
@@ -144,7 +146,7 @@ void getQueenTurn(ebit possingle, ebit posenemy, ebit posemptys) {
 		if (bitTry) {
 			isQueenTurn = false;
 			do {
-				getQueenTurn(bitTry, posenemy & ~(bitTry >> counter), posemptys);
+				getQueenTurn(element, bitTry, posenemy & ~(bitTry >> counter), posemptys);
 				counter += 7;
 				bitTry = ((bitTry & turnRightUp64) << 7) & posemptys;
 			} while (bitTry);
@@ -158,7 +160,7 @@ void getQueenTurn(ebit possingle, ebit posenemy, ebit posemptys) {
 		if (bitTry) {
 			isQueenTurn = false;
 			do {
-				getQueenTurn(bitTry, posenemy & ~(bitTry << counter), posemptys);
+				getQueenTurn(element, bitTry, posenemy & ~(bitTry << counter), posemptys);
 				counter += 7;
 				bitTry = ((bitTry & turnLeftDown64) >> 7) & posemptys;
 			} while (bitTry);
@@ -169,14 +171,14 @@ void getQueenTurn(ebit possingle, ebit posenemy, ebit posemptys) {
 		board sing = to32(possingle);
 		board empt = ~to32(posemptys);
 		board ene = to32(posenemy);
-		buf32_1 = active->thisBoard[1 ^ act] & empt | sing; //0 1  //Все шашки актиивной стороны сейчас
-		board buf32 = active->thisBoard[3 ^ act] & empt; //2 3
-		buf32_2 = active->thisBoard[act] & ene; //1 0
-		buf32_3 = active->thisBoard[act ^ 2] & ene; //3 2
-		board k = buf32_1 ^ active->thisBoard[act ^ 1] ^ sing;
-		hashNum = phash ^ tableZobrist[__lzcnt(sing)][act ^ 1] ^ tableZobrist[__lzcnt(k)][k & active->thisBoard[act ^ 3] ? act ^ 3 : act ^ 1];
-		board bufqueens = (buf32_2 ^ buf32_3) ^ (active->thisBoard[act] ^ active->thisBoard[act ^ 2]);
-		board bufsimple = buf32_3 ^ active->thisBoard[act ^ 2];
+		buf32_1 = element->thisBoard[1 ^ act] & empt | sing; //0 1  //Все шашки актиивной стороны сейчас
+		board buf32 = element->thisBoard[3 ^ act] & empt; //2 3
+		buf32_2 = element->thisBoard[act] & ene; //1 0
+		buf32_3 = element->thisBoard[act ^ 2] & ene; //3 2
+		board k = buf32_1 ^ element->thisBoard[act ^ 1] ^ sing;
+		hashNum = phash ^ tableZobrist[__lzcnt(sing)][act ^ 1] ^ tableZobrist[__lzcnt(k)][k & element->thisBoard[act ^ 3] ? act ^ 3 : act ^ 1];
+		board bufqueens = (buf32_2 ^ buf32_3) ^ (element->thisBoard[act] ^ element->thisBoard[act ^ 2]);
+		board bufsimple = buf32_3 ^ element->thisBoard[act ^ 2];
 		while (bufsimple) {
 			hashNum ^= tableZobrist[__lzcnt(bufsimple ^ (bufsimple & (bufsimple - 1)))][act ^ 2];
 			bufsimple &= bufsimple - 1;
@@ -188,46 +190,40 @@ void getQueenTurn(ebit possingle, ebit posenemy, ebit posemptys) {
 		if (hashTable[hashNum] != NULL) {
 			children = hashTable[hashNum];
 			while (children->next != NULL) {
-				if (children->thisActive != act &&
+				if (children->thisAct != act &&
 					children->thisBoard[act] == buf32_2 && children->thisBoard[act ^ 2] == buf32_3 &&
 					children->thisBoard[act ^ 3] == buf32 && children->thisBoard[act ^ 1] == buf32_1) {
-					active->childrens.push_back(children);
+					element->childrens.push_back(children);
 					break;
 				}
 				children = children->next;
 			}
-			if (children->next == NULL && children->thisActive != act &&
+			if (children->next == NULL && children->thisAct != act &&
 				children->thisBoard[act] == buf32_2 && children->thisBoard[act ^ 2] == buf32_3 &&
 				children->thisBoard[act ^ 3] == buf32 && children->thisBoard[act ^ 1] == buf32_1) {
-				active->childrens.push_back(children);
+				element->childrens.push_back(children);
 			}
 			else {
-				children->next = cache[last & HASHNUM] = new Node();
-				deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-				active->childrens.push_back(cache[last&HASHNUM]);
-				cache[last & HASHNUM]->thisBoard[act] = buf32_2;
-				cache[last & HASHNUM]->thisBoard[act ^ 1] = buf32_1;
-				cache[last & HASHNUM]->thisBoard[act ^ 2] = buf32_3;
-				cache[last & HASHNUM]->thisBoard[act ^ 3] = buf32;
-				//cache[last&HASHNUM]->zobrist = hashNum;
-				last++;
+				children = children->next = new Node();
+				element->childrens.push_back(children);
+				children->thisBoard[act] = buf32_2;
+				children->thisBoard[act ^ 1] = buf32_1;
+				children->thisBoard[act ^ 2] = buf32_3;
+				children->thisBoard[act ^ 3] = buf32;
 			}
 		}
 		else {
-			cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-			deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-			active->childrens.push_back(cache[last&HASHNUM]);
-			cache[last & HASHNUM]->thisBoard[act] = buf32_2;
-			cache[last & HASHNUM]->thisBoard[act ^ 1] = buf32_1;
-			cache[last & HASHNUM]->thisBoard[act ^ 2] = buf32_3;
-			cache[last & HASHNUM]->thisBoard[act ^ 3] = buf32;
-			//cache[last&HASHNUM]->zobrist = hashNum;
-			last++;
+			hashTable[hashNum] = new Node();
+			element->childrens.push_back(hashTable[hashNum]);
+			hashTable[hashNum]->thisBoard[act] = buf32_2;
+			hashTable[hashNum]->thisBoard[act ^ 1] = buf32_1;
+			hashTable[hashNum]->thisBoard[act ^ 2] = buf32_3;
+			hashTable[hashNum]->thisBoard[act ^ 3] = buf32;
 		}
 	}
 }
 
-void next(board possingle, board posenemy, board posemptys) {
+void next(Node* element, board possingle, board posenemy, board posemptys) {
 	board nexttryLeftUp = (((possingle & possibleLeftUp) << 1 & posenemy) << 1) & posemptys;
 	board nexttryRightDown = (((possingle & possibleRightDown) >> 1 & posenemy) >> 1) & posemptys;
 	board buf32 = ((possingle & possibleRightUp) << 7 | (possingle & possibleRightUp) >> 25) & posenemy;
@@ -237,50 +233,50 @@ void next(board possingle, board posenemy, board posemptys) {
 	if (nexttryLeftUp || nexttryLeftDown || nexttryRightUp || nexttryRightDown) {
 		if (nexttryLeftUp) {
 			if (act && (possingle & maxLeftUp)) {
-				getQueenTurn(to64(possingle << 2), to64(posenemy & ~(possingle << 1)), to64(posemptys));
+				getQueenTurn(element, to64(possingle << 2), to64(posenemy & ~(possingle << 1)), to64(posemptys));
 			}
 			else {
-				next(possingle << 2, posenemy & ~(possingle << 1), posemptys);
+				next(element, possingle << 2, posenemy & ~(possingle << 1), posemptys);
 			} 
 		}
 		if (nexttryLeftDown) {
 			if (!act && (possingle & maxLeftDown)) {
-				getQueenTurn(to64((possingle >> 14) | (possingle << 18)), to64(posenemy & ~((possingle >> 7) | (possingle << 25))), to64(posemptys));
+				getQueenTurn(element, to64((possingle >> 14) | (possingle << 18)), to64(posenemy & ~((possingle >> 7) | (possingle << 25))), to64(posemptys));
 			}
 			else {
-				next(possingle >> 14 | possingle << 18, posenemy & ~((possingle >> 7) | (possingle << 25)), posemptys);
+				next(element, possingle >> 14 | possingle << 18, posenemy & ~((possingle >> 7) | (possingle << 25)), posemptys);
 			}
 		}
 		if (nexttryRightDown) {
 			if (!act && (possingle & maxRightDown)) {
-				getQueenTurn(to64(possingle >> 2), to64(posenemy & ~(possingle >> 1)), to64(posemptys));
+				getQueenTurn(element, to64(possingle >> 2), to64(posenemy & ~(possingle >> 1)), to64(posemptys));
 			}
 			else {
-				next(possingle >> 2, posenemy & ~(possingle >> 1), posemptys);
+				next(element, possingle >> 2, posenemy & ~(possingle >> 1), posemptys);
 			}
 		}
 		if (nexttryRightUp) {
 			if (act && (possingle & maxRightUp)) {
-				getQueenTurn(to64((possingle << 14) | (possingle >> 18)), to64(posenemy & ~((possingle << 7) | (possingle >> 25))), to64(posemptys));
+				getQueenTurn(element, to64((possingle << 14) | (possingle >> 18)), to64(posenemy & ~((possingle << 7) | (possingle >> 25))), to64(posemptys));
 			}
 			else {
-				next(possingle << 14 | possingle >> 18, posenemy & ~((possingle << 7) | (possingle >> 25)), posemptys);
+				next(element, possingle << 14 | possingle >> 18, posenemy & ~((possingle << 7) | (possingle >> 25)), posemptys);
 			}
 		}
 	}
 	else {
-		buf32_1 = active->thisBoard[act ^ 1] & ~posemptys | possingle; //0 1
-		buf32 = active->thisBoard[act ^ 3] & ~posemptys | possingle; //2 3
-		buf32_2 = active->thisBoard[act] & posenemy; //1 0
-		buf32_3 = active->thisBoard[act ^ 2] & posenemy; //3 2
-		if (buf32_1 != active->thisBoard[act ^ 1]) {
+		buf32_1 = element->thisBoard[act ^ 1] & ~posemptys | possingle; //0 1
+		buf32 = element->thisBoard[act ^ 3] & ~posemptys | possingle; //2 3
+		buf32_2 = element->thisBoard[act] & posenemy; //1 0
+		buf32_3 = element->thisBoard[act ^ 2] & posenemy; //3 2
+		if (buf32_1 != element->thisBoard[act ^ 1]) {
 			hashNum = phash ^ tableZobrist[__lzcnt(possingle)][act ^ 3] ^ tableZobrist[__lzcnt(emptys ^ posemptys)][act ^ 3];
 		}
 		else {
 			hashNum = phash;
 		}
-		board bufqueens = (buf32_2 ^ buf32_3) ^ (active->thisBoard[act] ^ active->thisBoard[act ^ 2]);
-		board bufsimple = buf32_3 ^ active->thisBoard[act ^ 2];
+		board bufqueens = (buf32_2 ^ buf32_3) ^ (element->thisBoard[act] ^ element->thisBoard[act ^ 2]);
+		board bufsimple = buf32_3 ^ element->thisBoard[act ^ 2];
 		while (bufsimple) {
 			hashNum ^= tableZobrist[__lzcnt(bufsimple ^ (bufsimple & (bufsimple - 1)))][act ^ 2];
 			bufsimple &= bufsimple - 1;
@@ -292,82 +288,71 @@ void next(board possingle, board posenemy, board posemptys) {
 		if (hashTable[hashNum] != NULL) {
 			children = hashTable[hashNum];
 			while (children->next != NULL) {
-				if (children->thisActive != act &&
+				if (children->thisAct != act &&
 					children->thisBoard[act] == buf32_2 && children->thisBoard[act ^ 2] == buf32_3 &&
 					children->thisBoard[act ^ 3] == buf32 && children->thisBoard[act ^ 1] == buf32_1) {
-					active->childrens.push_back(children);
+					element->childrens.push_back(children);
 					break;
 				}
 				children = children->next;
 			}
-			if (children->next == NULL && children->thisActive != act &&
+			if (children->next == NULL && children->thisAct != act &&
 				children->thisBoard[act] == buf32_2 && children->thisBoard[act ^ 2] == buf32_3 &&
 				children->thisBoard[act ^ 3] == buf32 && children->thisBoard[act ^ 1] == buf32_1) {
-				active->childrens.push_back(children);
+				element->childrens.push_back(children); //Если 
 			}
 			else {
-				children->next = cache[last & HASHNUM] = new Node();
-				deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-				active->childrens.push_back(cache[last&HASHNUM]);
-				cache[last & HASHNUM]->thisBoard[act] = buf32_2;
-				cache[last & HASHNUM]->thisBoard[act ^ 1] = buf32_1;
-				cache[last & HASHNUM]->thisBoard[act ^ 2] = buf32_3;
-				cache[last & HASHNUM]->thisBoard[act ^ 3] = buf32;
-				//cache[last&HASHNUM]->zobrist = hashNum;
-				last++;
+				children = children->next = new Node();
+				element->childrens.push_back(children);
+				children->thisBoard[act] = buf32_2;
+				children->thisBoard[act ^ 1] = buf32_1;
+				children->thisBoard[act ^ 2] = buf32_3;
+				children->thisBoard[act ^ 3] = buf32;
 			}
 		}
 		else {
-			cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-			deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-			active->childrens.push_back(cache[last&HASHNUM]);
-			
-			cache[last & HASHNUM]->thisBoard[act] = buf32_2;
-			cache[last & HASHNUM]->thisBoard[act ^ 1] = buf32_1;
-			cache[last & HASHNUM]->thisBoard[act ^ 2] = buf32_3;
-			cache[last & HASHNUM]->thisBoard[act ^ 3] = buf32;
-			//cache[last&HASHNUM]->zobrist = hashNum;
-			last++;
+			hashTable[hashNum] = new Node();
+			element->childrens.push_back(hashTable[hashNum]);
+			hashTable[hashNum]->thisBoard[act] = buf32_2;
+			hashTable[hashNum]->thisBoard[act ^ 1] = buf32_1;
+			hashTable[hashNum]->thisBoard[act ^ 2] = buf32_3;
+			hashTable[hashNum]->thisBoard[act ^ 3] = buf32;
 		}
 	}
 }
 
-bool getChop(bool nado) {
-	if (cache[first & HASHNUM] == NULL) {
-		first++;
-	}
-	active = cache[first & HASHNUM];
-	act = active->thisActive;
-	enemy = active->thisBoard[act];
-	singles = active->thisBoard[act ^ 3];
-	queens = active->thisBoard[act ^ 1] ^ singles;
+bool getChop(Node* element) {
+	act = element->thisAct;
+	enemy = element->thisBoard[act];
+	singles = element->thisBoard[act ^ 3];
+	queens = element->thisBoard[act ^ 1] ^ singles;
+	all = element->thisBoard[0] | element->thisBoard[1];
+	emptys = ~all;
 	phash = stokehash;
-	board buf32 = cache[first & HASHNUM]->thisBoard[2];
+	board buf32 = element->thisBoard[2];
 	while (buf32) {
 		buf = buf32 ^ (buf32 & (buf32 - 1));
 		phash ^= tableZobrist[__lzcnt(buf)][2];
 		buf32 &= buf32 - 1;
 	}
-	buf32 = cache[first & HASHNUM]->thisBoard[2] ^ cache[first & HASHNUM]->thisBoard[0];
+	buf32 = element->thisBoard[2] ^ element->thisBoard[0];
 	while (buf32) {
 		buf = buf32 ^ (buf32 & (buf32 - 1));
 		phash ^= tableZobrist[__lzcnt(buf)][0];
 		buf32 &= buf32 - 1;
 	}
-	buf32 = cache[first & HASHNUM]->thisBoard[3];
+	buf32 = element->thisBoard[3];
 	while (buf32) {
 		buf = buf32 ^ (buf32 & (buf32 - 1));
 		phash ^= tableZobrist[__lzcnt(buf)][3];
 		buf32 &= buf32 - 1;
 	}
-	buf32 = cache[first & HASHNUM]->thisBoard[3] ^ cache[first & HASHNUM]->thisBoard[1];
+	buf32 = element->thisBoard[3] ^ element->thisBoard[1];
 	while (buf32) {
 		buf = buf32 ^ (buf32 & (buf32 - 1));
 		phash ^= tableZobrist[__lzcnt(buf)][1];
 		buf32 &= buf32 - 1;
 	}
-	all = active->thisBoard[0] | active->thisBoard[1];
-	emptys = ~all;
 	tryLeftUp = (((singles & possibleLeftUp) << 1 & enemy) << 1) & emptys;
 	tryRightDown = (((singles & possibleRightDown) >> 1 & enemy) >> 1)& emptys;
 	buf32 = ((singles & possibleRightUp) << 7 | (singles & possibleRightUp) >> 25)& enemy;
@@ -392,7 +377,7 @@ bool getChop(bool nado) {
 				buf64No2 = bitTry;
 				do {
 					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
-					getQueenTurn(mask, enemy64 & ~(mask >> counter), emptys64 | (mask >> (counter + counterfirst)));
+					getQueenTurn(element, mask, enemy64 & ~(mask >> counter), emptys64 | (mask >> (counter + counterfirst)));
 					buf64No2 &= buf64No2 - 1;
 				} while (buf64No2);
 				counter++;
@@ -411,7 +396,7 @@ bool getChop(bool nado) {
 				buf64No2 = bitTry;
 				do {
 					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
-					getQueenTurn(mask, enemy64 & ~(mask << counter), emptys64 | (mask << (counter + counterfirst)));
+					getQueenTurn(element, mask, enemy64 & ~(mask << counter), emptys64 | (mask << (counter + counterfirst)));
 					buf64No2 &= buf64No2 - 1;
 				} while (buf64No2);
 				counter++;
@@ -430,7 +415,7 @@ bool getChop(bool nado) {
 				buf64No2 = bitTry;
 				do {
 					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
-					getQueenTurn(mask, enemy64 & ~(mask >> counter), emptys64 | (mask >> (counter + counterfirst)));
+					getQueenTurn(element, mask, enemy64 & ~(mask >> counter), emptys64 | (mask >> (counter + counterfirst)));
 					buf64No2 &= buf64No2 - 1;
 				} while (buf64No2);
 				bitTry = ((bitTry & turnRightUp64) << 7) & emptys64;
@@ -449,7 +434,7 @@ bool getChop(bool nado) {
 				buf64No2 = bitTry;
 				do {
 					mask = buf64No2 ^ (buf64No2 & (buf64No2 - 1));
-					getQueenTurn(mask, enemy64 & ~(mask << counter), emptys64 | (mask << (counter + counterfirst)));
+					getQueenTurn(element, mask, enemy64 & ~(mask << counter), emptys64 | (mask << (counter + counterfirst)));
 					buf64No2 &= buf64No2 - 1;
 				} while (buf64No2);
 				bitTry = (bitTry & turnLeftDown64) >> 7 & emptys64;
@@ -465,13 +450,13 @@ bool getChop(bool nado) {
 			tryLeftUp ^= buf;
 			while (buf) {
 				buf32 = buf ^ (buf & (buf - 1));
-				getQueenTurn(to64(buf32), to64(enemy & ~(buf32 >> 1)), to64(emptys | buf32 >> 2));
+				getQueenTurn(element, to64(buf32), to64(enemy & ~(buf32 >> 1)), to64(emptys | buf32 >> 2));
 				buf &= buf - 1;
 			}
 		}
 		while (tryLeftUp) {
 			buf32 = tryLeftUp ^ (tryLeftUp & (tryLeftUp - 1));
-			next(buf32, enemy & ~(buf32 >> 1), emptys | (buf32 >> 2));
+			next(element, buf32, enemy & ~(buf32 >> 1), emptys | (buf32 >> 2));
 			tryLeftUp &= tryLeftUp - 1;
 		}
 	}
@@ -481,13 +466,13 @@ bool getChop(bool nado) {
 			tryRightDown ^= buf;
 			while (buf) {
 				buf32 = buf ^ (buf & (buf - 1));
-				getQueenTurn(to64(buf32), to64(enemy & ~(buf32 << 1)), to64(emptys | (buf32 << 2)));
+				getQueenTurn(element, to64(buf32), to64(enemy & ~(buf32 << 1)), to64(emptys | (buf32 << 2)));
 				buf &= buf - 1;
 			}
 		}
 		while (tryRightDown) {
 			buf32 = tryRightDown ^ (tryRightDown & (tryRightDown - 1));
-			next(buf32, enemy & ~(buf32 << 1), emptys | (buf32 << 2));
+			next(element, buf32, enemy & ~(buf32 << 1), emptys | (buf32 << 2));
 			tryRightDown &= tryRightDown - 1;
 		}
 	}
@@ -497,13 +482,13 @@ bool getChop(bool nado) {
 			tryLeftDown ^= buf;
 			while (buf) {
 				buf32 = buf ^ (buf & (buf - 1));
-				getQueenTurn(to64(buf32), to64(enemy & ~(buf32 << 7 | buf32 >> 25)), to64(emptys | (buf32 << 14) | (buf32 >> 18)));
+				getQueenTurn(element, to64(buf32), to64(enemy & ~(buf32 << 7 | buf32 >> 25)), to64(emptys | (buf32 << 14) | (buf32 >> 18)));
 				buf &= buf - 1;
 			}
 		}
 		while (tryLeftDown) {
 			buf32 = tryLeftDown ^ (tryLeftDown & (tryLeftDown - 1));
-			next(buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | (buf32 << 14) | (buf32 >> 18));
+			next(element, buf32, enemy & ~(buf32 << 7 | buf32 >> 25), emptys | (buf32 << 14) | (buf32 >> 18));
 			tryLeftDown &= tryLeftDown - 1;
 		}
 	}
@@ -513,25 +498,22 @@ bool getChop(bool nado) {
 			tryRightUp ^= buf;
 			while (buf) {
 				buf32 = buf ^ (buf & (buf - 1));
-				getQueenTurn(to64(buf32), to64(enemy & ~(buf32 >> 7 | buf32 << 25)), to64(emptys | (buf32 >> 14) | (buf32 << 18)));
+				getQueenTurn(element, to64(buf32), to64(enemy & ~(buf32 >> 7 | buf32 << 25)), to64(emptys | (buf32 >> 14) | (buf32 << 18)));
 				buf &= buf - 1;
 			}
 		}
 		while (tryRightUp) {
 			buf32 = tryRightUp ^ (tryRightUp & (tryRightUp - 1));
-			next(buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | (buf32 >> 14) | (buf32 << 18));
+			next(element, buf32, enemy & ~(buf32 >> 7 | buf32 << 25), emptys | (buf32 >> 14) | (buf32 << 18));
 			tryRightUp &= tryRightUp - 1;
 		}
-	}
-	if (nado) {
-		first++;
 	}
 	return isQueenTurn;
 }
 
-void getTurn() {
+void getTurn(Node* element) {
 	board buf32;
-	bool isQueenTurn = getChop(false);
+	bool isQueenTurn = getChop(element);
 	if(!isQueenTurn) {
 		if (queens) {
 			uchar counter = 1; //считает какой по счёту ход дамкой от конечного положения
@@ -546,49 +528,40 @@ void getTurn() {
 					hashNum = phash ^ tableZobrist[__lzcnt(buf32)][act ^ 1] ^ tableZobrist[__lzcnt(buf32_1)][act ^ 1];
 					if (hashTable[hashNum] != NULL) {
 						children = hashTable[hashNum];
-						buf32 = ((active->thisBoard[act ^ 1] | buf32) & ~buf32_1);  //Теперь содержит все шашки активной стороны
+						buf32 = ((element->thisBoard[act ^ 1] | buf32) & ~buf32_1);  //Теперь содержит все шашки активной стороны
 						while (children->next != NULL) {
-							if (children->thisActive != act &&
-								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
-								children->thisBoard[act] == active->thisBoard[act] &&
+							if (children->thisAct != act &&
+								children->thisBoard[2] == element->thisBoard[2] && children->thisBoard[3] == element->thisBoard[3] &&
+								children->thisBoard[act] == element->thisBoard[act] &&
 								children->thisBoard[act ^ 1] == buf32) {
-								active->childrens.push_back(children);
-								
+								element->childrens.push_back(children);
 								break;
 							}
 							children = children->next;
 						}
-						if (children->next == NULL && children->thisActive != act &&
-							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
-							children->thisBoard[act] == active->thisBoard[act] &&
+						if (children->next == NULL && children->thisAct != act &&
+							children->thisBoard[2] == element->thisBoard[2] && children->thisBoard[3] == element->thisBoard[3] &&
+							children->thisBoard[act] == element->thisBoard[act] &&
 							children->thisBoard[act ^ 1] == buf32) {
-							active->childrens.push_back(children);
+							element->childrens.push_back(children);
 							
 						}
 						else {
-							children->next = cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-							deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-							active->childrens.push_back(cache[last&HASHNUM]);
-							
-							cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-							cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-							cache[last & HASHNUM]->thisBoard[act] = active->thisBoard[act];
-							cache[last & HASHNUM]->thisBoard[act ^ 1] = buf32;
-							//cache[last&HASHNUM]->zobrist = hashNum;
-							last++;
+							children = children->next = hashTable[hashNum] = new Node();
+							element->childrens.push_back(children);
+							children->thisBoard[2] = element->thisBoard[2];
+							children->thisBoard[3] = element->thisBoard[3];
+							children->thisBoard[act] = element->thisBoard[act];
+							children->thisBoard[act ^ 1] = buf32;
 						}
 					}
 					else {
-						cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						
-						cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-						cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-						cache[last & HASHNUM]->thisBoard[act] = active->thisBoard[act];
-						cache[last & HASHNUM]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | buf32) & ~buf32_1;
-						//cache[last&HASHNUM]->zobrist = hashNum;
-						last++;
+						hashTable[hashNum] = new Node();
+						element->childrens.push_back(hashTable[hashNum]);
+						hashTable[hashNum]->thisBoard[2] = element->thisBoard[2];
+						hashTable[hashNum]->thisBoard[3] = element->thisBoard[3];
+						hashTable[hashNum]->thisBoard[act] = element->thisBoard[act];
+						hashTable[hashNum]->thisBoard[act ^ 1] = (element->thisBoard[act ^ 1] | buf32) & ~buf32_1;
 					}
 					bitTry &= bitTry - 1;
 				} while (bitTry);
@@ -606,50 +579,42 @@ void getTurn() {
 					buf32_1 = to32(mask << counter);
 					hashNum = phash ^ tableZobrist[__lzcnt(buf32)][act ^ 1] ^ tableZobrist[__lzcnt(buf32_1)][act ^ 1];
 					if (hashTable[hashNum] != NULL) {
-						buf32 = ((active->thisBoard[act ^ 1] | buf32) & ~buf32_1);
+						buf32 = ((element->thisBoard[act ^ 1] | buf32) & ~buf32_1);
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
-							if (children->thisActive != act &&
-								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
-								children->thisBoard[act] == active->thisBoard[act] &&
+							if (children->thisAct != act &&
+								children->thisBoard[2] == element->thisBoard[2] && children->thisBoard[3] == element->thisBoard[3] &&
+								children->thisBoard[act] == element->thisBoard[act] &&
 								children->thisBoard[act ^ 1] == buf32) {
-								active->childrens.push_back(children);
+								element->childrens.push_back(children);
 								
 								break;
 							}
 							children = children->next;
 						}
-						if (children->next == NULL && children->thisActive != act &&
-							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
-							children->thisBoard[act] == active->thisBoard[act] &&
+						if (children->next == NULL && children->thisAct != act &&
+							children->thisBoard[2] == element->thisBoard[2] && children->thisBoard[3] == element->thisBoard[3] &&
+							children->thisBoard[act] == element->thisBoard[act] &&
 							children->thisBoard[act ^ 1] == buf32) {
-							active->childrens.push_back(children);
+							element->childrens.push_back(children);
 							
 						}
 						else {
-							children->next = cache[last & HASHNUM] = new Node();
-							deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-							active->childrens.push_back(cache[last&HASHNUM]);
-							
-							cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-							cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-							cache[last & HASHNUM]->thisBoard[act] = active->thisBoard[act];
-							cache[last & HASHNUM]->thisBoard[act ^ 1] = buf32;
-							//cache[last&HASHNUM]->zobrist = hashNum;
-							last++;
+							children = children->next = new Node();
+							element->childrens.push_back(children);
+							children->thisBoard[2] = element->thisBoard[2];
+							children->thisBoard[3] = element->thisBoard[3];
+							children->thisBoard[act] = element->thisBoard[act];
+							children->thisBoard[act ^ 1] = buf32;
 						}
 					}
 					else {
-						cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						
-						cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-						cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-						cache[last & HASHNUM]->thisBoard[act] = active->thisBoard[act];
-						cache[last & HASHNUM]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | buf32) & ~buf32_1;
-						//cache[last&HASHNUM]->zobrist = hashNum;
-						last++;
+						hashTable[hashNum] = new Node();
+						element->childrens.push_back(hashTable[hashNum]);
+						hashTable[hashNum]->thisBoard[2] = element->thisBoard[2];
+						hashTable[hashNum]->thisBoard[3] = element->thisBoard[3];
+						hashTable[hashNum]->thisBoard[act] = element->thisBoard[act];
+						hashTable[hashNum]->thisBoard[act ^ 1] = (element->thisBoard[act ^ 1] | buf32) & ~buf32_1;
 					}
 					bitTry &= bitTry - 1;
 				} while (bitTry);
@@ -667,48 +632,42 @@ void getTurn() {
 					buf32_1 = to32(mask >> counter);
 					hashNum = phash ^ tableZobrist[__lzcnt(buf32)][act ^ 1] ^ tableZobrist[__lzcnt(buf32_1)][act ^ 1];
 					if (hashTable[hashNum] != NULL) {
-						buf32 = ((active->thisBoard[act ^ 1] | buf32) & ~buf32_1);
+						buf32 = ((element->thisBoard[act ^ 1] | buf32) & ~buf32_1);
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
-							if (children->thisActive != act &&
-								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
-								children->thisBoard[act] == active->thisBoard[act] &&
+							if (children->thisAct != act &&
+								children->thisBoard[2] == element->thisBoard[2] && children->thisBoard[3] == element->thisBoard[3] &&
+								children->thisBoard[act] == element->thisBoard[act] &&
 								children->thisBoard[act ^ 1] == buf32) {
-								active->childrens.push_back(children);
+								element->childrens.push_back(children);
 								
 								break;
 							}
 							children = children->next;
 						}
-						if (children->next == NULL && children->thisActive != act &&
-							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
-							children->thisBoard[act] == active->thisBoard[act] &&
+						if (children->next == NULL && children->thisAct != act &&
+							children->thisBoard[2] == element->thisBoard[2] && children->thisBoard[3] == element->thisBoard[3] &&
+							children->thisBoard[act] == element->thisBoard[act] &&
 							children->thisBoard[act ^ 1] == buf32) {
-							active->childrens.push_back(children);
+							element->childrens.push_back(children);
 							
 						}
 						else {
-							children->next = cache[last & HASHNUM] = new Node();
-							deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-							active->childrens.push_back(cache[last&HASHNUM]);
-							
-							cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-							cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-							cache[last & HASHNUM]->thisBoard[act] = active->thisBoard[act];
-							cache[last & HASHNUM]->thisBoard[act ^ 1] = buf32;
-							//cache[last&HASHNUM]->zobrist = hashNum;
-							last++;
+							children = children->next = new Node();
+							element->childrens.push_back(children);
+							children->thisBoard[2] = element->thisBoard[2];
+							children->thisBoard[3] = element->thisBoard[3];
+							children->thisBoard[act] = element->thisBoard[act];
+							children->thisBoard[act ^ 1] = buf32;
 						}
 					}
 					else {
-						cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-						cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-						cache[last & HASHNUM]->thisBoard[act] = active->thisBoard[act];
-						cache[last & HASHNUM]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | buf32) & ~buf32_1;
-						last++;
+						hashTable[hashNum] = new Node();
+						element->childrens.push_back(hashTable[hashNum]);
+						hashTable[hashNum]->thisBoard[2] = element->thisBoard[2];
+						hashTable[hashNum]->thisBoard[3] = element->thisBoard[3];
+						hashTable[hashNum]->thisBoard[act] = element->thisBoard[act];
+						hashTable[hashNum]->thisBoard[act ^ 1] = (element->thisBoard[act ^ 1] | buf32) & ~buf32_1;
 					}
 					bitTry &= bitTry - 1;
 				} while (bitTry);
@@ -726,50 +685,42 @@ void getTurn() {
 					buf32_1 = to32(mask << counter);
 					hashNum = phash ^ tableZobrist[__lzcnt(buf32)][act ^ 1] ^ tableZobrist[__lzcnt(buf32_1)][act ^ 1];
 					if (hashTable[hashNum] != NULL) {
-						buf32 = ((active->thisBoard[act ^ 1] | buf32) & ~buf32_1);
+						buf32 = ((element->thisBoard[act ^ 1] | buf32) & ~buf32_1);
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
-							if (children->thisActive != act &&
-								children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
-								children->thisBoard[act] == active->thisBoard[act] &&
+							if (children->thisAct != act &&
+								children->thisBoard[2] == element->thisBoard[2] && children->thisBoard[3] == element->thisBoard[3] &&
+								children->thisBoard[act] == element->thisBoard[act] &&
 								children->thisBoard[act ^ 1] == buf32) {
-								active->childrens.push_back(children);
+								element->childrens.push_back(children);
 								
 								break;
 							}
 							children = children->next;
 						}
-						if (children->next == NULL && children->thisActive != act &&
-							children->thisBoard[2] == active->thisBoard[2] && children->thisBoard[3] == active->thisBoard[3] &&
-							children->thisBoard[act] == active->thisBoard[act] &&
+						if (children->next == NULL && children->thisAct != act &&
+							children->thisBoard[2] == element->thisBoard[2] && children->thisBoard[3] == element->thisBoard[3] &&
+							children->thisBoard[act] == element->thisBoard[act] &&
 							children->thisBoard[act ^ 1] == buf32) {
-							active->childrens.push_back(children);
+							element->childrens.push_back(children);
 							
 						}
 						else {
-							children->next = cache[last & HASHNUM] = new Node();
-							deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-							active->childrens.push_back(cache[last&HASHNUM]);
-							
-							cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-							cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-							cache[last & HASHNUM]->thisBoard[act] = active->thisBoard[act];
-							cache[last & HASHNUM]->thisBoard[act ^ 1] = buf32;
-							//cache[last&HASHNUM]->zobrist = hashNum;
-							last++;
+							children = children->next = new Node();
+							element->childrens.push_back(children);
+							children->thisBoard[2] = element->thisBoard[2];
+							children->thisBoard[3] = element->thisBoard[3];
+							children->thisBoard[act] = element->thisBoard[act];
+							children->thisBoard[act ^ 1] = buf32;
 						}
 					}
 					else {
-						cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						
-						cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-						cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-						cache[last & HASHNUM]->thisBoard[act] = active->thisBoard[act];
-						cache[last & HASHNUM]->thisBoard[act ^ 1] = (active->thisBoard[act ^ 1] | buf32) & ~buf32_1;
-						//cache[last&HASHNUM]->zobrist = hashNum;
-						last++;
+						hashTable[hashNum] = new Node();
+						element->childrens.push_back(hashTable[hashNum]);
+						hashTable[hashNum]->thisBoard[2] = element->thisBoard[2];
+						hashTable[hashNum]->thisBoard[3] = element->thisBoard[3];
+						hashTable[hashNum]->thisBoard[act] = element->thisBoard[act];
+						hashTable[hashNum]->thisBoard[act ^ 1] = (element->thisBoard[act ^ 1] | buf32) & ~buf32_1;
 					}
 					bitTry &= bitTry - 1;
 				} while (bitTry);
@@ -788,51 +739,43 @@ void getTurn() {
 					n = __lzcnt(buf);
 					hashNum = phash ^ tableZobrist[n][0] ^ tableZobrist[n + 1][2];
 					if (hashTable[hashNum] != NULL) {
-						buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 1);
+						buf32_1 = (element->thisBoard[0] | buf) & ~(buf >> 1);
 						buf32 = (singles) & ~(buf >> 1);
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
-							if (children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
-								children->thisBoard[3] == active->thisBoard[3] &&
+							if (children->thisBoard[1] == element->thisBoard[1] &&                          //act === 1, act потомка act === 0
+								children->thisBoard[3] == element->thisBoard[3] &&
 								children->thisBoard[2] == buf32 &&
-								children->thisBoard[0] == buf32_1 && children->thisActive != 1) {
-								active->childrens.push_back(children);
+								children->thisBoard[0] == buf32_1 && children->thisAct != 1) {
+								element->childrens.push_back(children);
 								
 								break;
 							}
 							children = children->next;
 						}
-						if (children->next == NULL && children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
-							children->thisBoard[3] == active->thisBoard[3] &&
+						if (children->next == NULL && children->thisBoard[1] == element->thisBoard[1] &&                          //act === 1, act потомка act === 0
+							children->thisBoard[3] == element->thisBoard[3] &&
 							children->thisBoard[2] == buf32 &&
-							children->thisBoard[0] == buf32_1 && children->thisActive != 1) {
-							active->childrens.push_back(children);
+							children->thisBoard[0] == buf32_1 && children->thisAct != 1) {
+							element->childrens.push_back(children);
 							
 						}
 						else {
-							children->next = cache[last & HASHNUM] = new Node();
-							deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-							active->childrens.push_back(cache[last&HASHNUM]);
-							
-							cache[last & HASHNUM]->thisBoard[1] = active->thisBoard[1];
-							cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-							cache[last & HASHNUM]->thisBoard[0] = buf32_1;
-							cache[last & HASHNUM]->thisBoard[2] = buf32;
-							//cache[last&HASHNUM]->zobrist = hashNum;
-							last++;
+							children = children->next = new Node();
+							element->childrens.push_back(children);
+							children->thisBoard[1] = element->thisBoard[1];
+							children->thisBoard[3] = element->thisBoard[3];
+							children->thisBoard[0] = buf32_1;
+							children->thisBoard[2] = buf32;
 						}
 					}
 					else {
-						cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						
-						cache[last & HASHNUM]->thisBoard[1] = active->thisBoard[1];
-						cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-						cache[last & HASHNUM]->thisBoard[2] = (singles) & ~(buf >> 1);
-						cache[last & HASHNUM]->thisBoard[0] = (active->thisBoard[0] | buf) & ~(buf >> 1);
-						//cache[last&HASHNUM]->zobrist = hashNum;
-						last++;
+						hashTable[hashNum] = new Node();
+						element->childrens.push_back(hashTable[hashNum]);
+						hashTable[hashNum]->thisBoard[1] = element->thisBoard[1];
+						hashTable[hashNum]->thisBoard[3] = element->thisBoard[3];
+						hashTable[hashNum]->thisBoard[2] = (singles) & ~(buf >> 1);
+						hashTable[hashNum]->thisBoard[0] = (element->thisBoard[0] | buf) & ~(buf >> 1);
 					}
 					tryLeftUpQueen &= tryLeftUpQueen - 1;
 				} while (tryLeftUpQueen);
@@ -843,51 +786,43 @@ void getTurn() {
 				n = __lzcnt(buf);
 				hashNum = phash ^ tableZobrist[n][2] ^ tableZobrist[n + 1][2];
 				if (hashTable[hashNum] != NULL) {
-					buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 1);
+					buf32_1 = (element->thisBoard[0] | buf) & ~(buf >> 1);
 					buf32 = (singles | buf) & ~(buf >> 1);
 					children = hashTable[hashNum];
 					while (children->next != NULL) {
-						if (children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
-							children->thisBoard[3] == active->thisBoard[3] &&
+						if (children->thisBoard[1] == element->thisBoard[1] &&                          //act === 1, act потомка act === 0
+							children->thisBoard[3] == element->thisBoard[3] &&
 							children->thisBoard[2] == buf32 &&
-							children->thisBoard[0] == buf32_1 && children->thisActive != 1) {
-							active->childrens.push_back(children);
+							children->thisBoard[0] == buf32_1 && children->thisAct != 1) {
+							element->childrens.push_back(children);
 							
 							break;
 						}
 						children = children->next;
 					}
-					if (children->next == NULL && children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
-						children->thisBoard[3] == active->thisBoard[3] &&
+					if (children->next == NULL && children->thisBoard[1] == element->thisBoard[1] &&                          //act === 1, act потомка act === 0
+						children->thisBoard[3] == element->thisBoard[3] &&
 						children->thisBoard[2] == buf32 &&
-						children->thisBoard[0] == buf32_1 && children->thisActive != 1) {
-						active->childrens.push_back(children);
+						children->thisBoard[0] == buf32_1 && children->thisAct != 1) {
+						element->childrens.push_back(children);
 						
 					}
 					else {
-						children->next = cache[last & HASHNUM] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						
-						cache[last & HASHNUM]->thisBoard[1] = active->thisBoard[1];
-						cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-						cache[last & HASHNUM]->thisBoard[0] = buf32_1;
-						cache[last & HASHNUM]->thisBoard[2] = buf32;
-						//cache[last&HASHNUM]->zobrist = hashNum;
-						last++;
+						children = children->next = new Node();
+						element->childrens.push_back(children);
+						children->thisBoard[1] = element->thisBoard[1];
+						children->thisBoard[3] = element->thisBoard[3];
+						children->thisBoard[0] = buf32_1;
+						children->thisBoard[2] = buf32;
 					}
 				}
 				else {
-					cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-					deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-					active->childrens.push_back(cache[last&HASHNUM]);
-					
-					cache[last & HASHNUM]->thisBoard[1] = active->thisBoard[1];
-					cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-					cache[last & HASHNUM]->thisBoard[2] = (singles | buf) & ~(buf >> 1);
-					cache[last & HASHNUM]->thisBoard[0] = (active->thisBoard[0] | buf) & ~(buf >> 1);
-					//cache[last&HASHNUM]->zobrist = hashNum;
-					last++;
+					hashTable[hashNum] = new Node();
+					element->childrens.push_back(hashTable[hashNum]);
+					hashTable[hashNum]->thisBoard[1] = element->thisBoard[1];
+					hashTable[hashNum]->thisBoard[3] = element->thisBoard[3];
+					hashTable[hashNum]->thisBoard[2] = (singles | buf) & ~(buf >> 1);
+					hashTable[hashNum]->thisBoard[0] = (element->thisBoard[0] | buf) & ~(buf >> 1);
 				}
 				tryLeftUp &= tryLeftUp - 1;
 			}
@@ -901,45 +836,41 @@ void getTurn() {
 					n = __lzcnt(buf);
 					hashNum = phash ^ tableZobrist[n < 25 ? n + 7 : n - 25][2] ^ tableZobrist[n][0];
 					if (hashTable[hashNum] != NULL) {
-						buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
+						buf32_1 = (element->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
 						buf32 = (singles) & ~(buf >> 7 | buf << 25);
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
-							if (children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
-								children->thisBoard[3] == active->thisBoard[3] &&
+							if (children->thisBoard[1] == element->thisBoard[1] &&                          //act === 1, act потомка act === 0
+								children->thisBoard[3] == element->thisBoard[3] &&
 								children->thisBoard[2] == buf32 &&
-								children->thisBoard[0] == buf32_1 && children->thisActive != 1) {
-								active->childrens.push_back(children);
+								children->thisBoard[0] == buf32_1 && children->thisAct != 1) {
+								element->childrens.push_back(children);
 								break;
 							}
 							children = children->next;
 						}
-						if (children->next == NULL && children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
-							children->thisBoard[3] == active->thisBoard[3] &&
+						if (children->next == NULL && children->thisBoard[1] == element->thisBoard[1] &&                          //act === 1, act потомка act === 0
+							children->thisBoard[3] == element->thisBoard[3] &&
 							children->thisBoard[2] == buf32 &&
-							children->thisBoard[0] == buf32_1 && children->thisActive != 1) {
-							active->childrens.push_back(children);
+							children->thisBoard[0] == buf32_1 && children->thisAct != 1) {
+							element->childrens.push_back(children);
 						}
 						else {
-							children->next = cache[last & HASHNUM] = new Node();
-							deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-							active->childrens.push_back(cache[last&HASHNUM]);
-							cache[last & HASHNUM]->thisBoard[1] = active->thisBoard[1];
-							cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-							cache[last & HASHNUM]->thisBoard[0] = buf32_1;
-							cache[last & HASHNUM]->thisBoard[2] = buf32;
-							last++;
+							children = children->next = new Node();
+							element->childrens.push_back(children);
+							children->thisBoard[1] = element->thisBoard[1];
+							children->thisBoard[3] = element->thisBoard[3];
+							children->thisBoard[0] = buf32_1;
+							children->thisBoard[2] = buf32;
 						}
 					}
 					else {
-						cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						cache[last & HASHNUM]->thisBoard[1] = active->thisBoard[1];
-						cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-						cache[last & HASHNUM]->thisBoard[2] = (singles) & ~(buf >> 7 | buf << 25);
-						cache[last & HASHNUM]->thisBoard[0] = (active->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
-						last++;
+						hashTable[hashNum] = new Node();
+						element->childrens.push_back(hashTable[hashNum]);
+						hashTable[hashNum]->thisBoard[1] = element->thisBoard[1];
+						hashTable[hashNum]->thisBoard[3] = element->thisBoard[3];
+						hashTable[hashNum]->thisBoard[2] = (singles) & ~(buf >> 7 | buf << 25);
+						hashTable[hashNum]->thisBoard[0] = (element->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
 					}
 					tryRightUpQueen &= tryRightUpQueen - 1;
 				} while (tryRightUpQueen);
@@ -950,47 +881,43 @@ void getTurn() {
 				n = __lzcnt(buf);
 				hashNum = phash ^ tableZobrist[n < 25 ? n + 7 : n - 25][2] ^ tableZobrist[n][2];
 				if (hashTable[hashNum] != NULL) {
-					buf32_1 = (active->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
+					buf32_1 = (element->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
 					buf32 = (singles | buf) & ~(buf >> 7 | buf << 25);
 					children = hashTable[hashNum];
 					while (children->next != NULL) {
-						if (children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
-							children->thisBoard[3] == active->thisBoard[3] &&
+						if (children->thisBoard[1] == element->thisBoard[1] &&                          //act === 1, act потомка act === 0
+							children->thisBoard[3] == element->thisBoard[3] &&
 							children->thisBoard[2] == buf32 &&
-							children->thisBoard[0] == buf32_1 && children->thisActive != 1) {
-							active->childrens.push_back(children);
+							children->thisBoard[0] == buf32_1 && children->thisAct != 1) {
+							element->childrens.push_back(children);
 							
 							break;
 						}
 						children = children->next;
 					}
-					if (children->next == NULL && children->thisBoard[1] == active->thisBoard[1] &&                          //act === 1, act потомка act === 0
-						children->thisBoard[3] == active->thisBoard[3] &&
+					if (children->next == NULL && children->thisBoard[1] == element->thisBoard[1] &&                          //act === 1, act потомка act === 0
+						children->thisBoard[3] == element->thisBoard[3] &&
 						children->thisBoard[2] == buf32 &&
-						children->thisBoard[0] == buf32_1 && children->thisActive != 1) {
-						active->childrens.push_back(children);
+						children->thisBoard[0] == buf32_1 && children->thisAct != 1) {
+						element->childrens.push_back(children);
 						
 					}
 					else {
-						children->next = cache[last & HASHNUM] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						cache[last & HASHNUM]->thisBoard[1] = active->thisBoard[1];
-						cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-						cache[last & HASHNUM]->thisBoard[0] = buf32_1;
-						cache[last & HASHNUM]->thisBoard[2] = buf32;
-						last++;
+						children = children->next = new Node();
+						element->childrens.push_back(children);
+						children->thisBoard[1] = element->thisBoard[1];
+						children->thisBoard[3] = element->thisBoard[3];
+						children->thisBoard[0] = buf32_1;
+						children->thisBoard[2] = buf32;
 					}
 				}
 				else {
-					cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-					deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-					active->childrens.push_back(cache[last&HASHNUM]);
-					cache[last & HASHNUM]->thisBoard[1] = active->thisBoard[1];
-					cache[last & HASHNUM]->thisBoard[3] = active->thisBoard[3];
-					cache[last & HASHNUM]->thisBoard[2] = (singles | buf) & ~(buf >> 7 | buf << 25);
-					cache[last & HASHNUM]->thisBoard[0] = (active->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
-					last++;
+					hashTable[hashNum] = new Node();
+					element->childrens.push_back(hashTable[hashNum]);
+					hashTable[hashNum]->thisBoard[1] = element->thisBoard[1];
+					hashTable[hashNum]->thisBoard[3] = element->thisBoard[3];
+					hashTable[hashNum]->thisBoard[2] = (singles | buf) & ~(buf >> 7 | buf << 25);
+					hashTable[hashNum]->thisBoard[0] = (element->thisBoard[0] | buf) & ~(buf >> 7 | buf << 25);
 				}
 				tryRightUp &= tryRightUp - 1;
 			}
@@ -1006,47 +933,43 @@ void getTurn() {
 					n = __lzcnt(buf);
 					hashNum = phash ^ tableZobrist[n][1] ^ tableZobrist[n - 1][3];
 					if (hashTable[hashNum] != NULL) {
-						buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 1);
+						buf32_1 = (element->thisBoard[1] | buf) & ~(buf << 1);
 						buf32 = (singles) & ~(buf << 1);
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
 							if (children->thisBoard[1] == buf32_1 &&
 								children->thisBoard[3] == buf32 &&
-								children->thisBoard[0] == active->thisBoard[0] &&
-								children->thisBoard[2] == active->thisBoard[2] &&
-								children->thisActive != 0) {
-								active->childrens.push_back(children);
+								children->thisBoard[0] == element->thisBoard[0] &&
+								children->thisBoard[2] == element->thisBoard[2] &&
+								children->thisAct != 0) {
+								element->childrens.push_back(children);
 								break;
 							}
 							children = children->next;
 						}
 						if (children->next == NULL && children->thisBoard[1] == buf32_1 &&
 							children->thisBoard[3] == buf32 &&
-							children->thisBoard[0] == active->thisBoard[0] &&
-							children->thisBoard[2] == active->thisBoard[2] &&
-							children->thisActive != 0) {
-							active->childrens.push_back(children);
+							children->thisBoard[0] == element->thisBoard[0] &&
+							children->thisBoard[2] == element->thisBoard[2] &&
+							children->thisAct != 0) {
+							element->childrens.push_back(children);
 						}
 						else {
-							children->next = cache[last & HASHNUM] = new Node();
-							deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-							active->childrens.push_back(cache[last&HASHNUM]);
-							cache[last & HASHNUM]->thisBoard[0] = active->thisBoard[0];
-							cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-							cache[last & HASHNUM]->thisBoard[1] = buf32_1;
-							cache[last & HASHNUM]->thisBoard[3] = buf32;
-							last++;
+							children = children->next = new Node();
+							element->childrens.push_back(children);
+							children->thisBoard[0] = element->thisBoard[0];
+							children->thisBoard[2] = element->thisBoard[2];
+							children->thisBoard[1] = buf32_1;
+							children->thisBoard[3] = buf32;
 						}
 					}
 					else {
-						cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						cache[last & HASHNUM]->thisBoard[0] = active->thisBoard[0];
-						cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-						cache[last & HASHNUM]->thisBoard[1] = (active->thisBoard[1] | buf) & ~(buf << 1);
-						cache[last & HASHNUM]->thisBoard[3] = (singles) & ~(buf << 1);
-						last++;
+						hashTable[hashNum] = new Node();
+						element->childrens.push_back(hashTable[hashNum]);
+						hashTable[hashNum]->thisBoard[0] = element->thisBoard[0];
+						hashTable[hashNum]->thisBoard[2] = element->thisBoard[2];
+						hashTable[hashNum]->thisBoard[1] = (element->thisBoard[1] | buf) & ~(buf << 1);
+						hashTable[hashNum]->thisBoard[3] = (singles) & ~(buf << 1);
 					}
 					tryRightDownQueen &= tryRightDownQueen - 1;
 				} while (tryRightDownQueen);
@@ -1057,47 +980,43 @@ void getTurn() {
 				n = __lzcnt(buf);
 				hashNum = phash ^ tableZobrist[n][3] ^ tableZobrist[n - 1][3];
 				if (hashTable[hashNum] != NULL) {
-					buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 1);
+					buf32_1 = (element->thisBoard[1] | buf) & ~(buf << 1);
 					buf32 = (singles | buf) & ~(buf << 1);
 					children = hashTable[hashNum];
 					while (children->next != NULL) {
 						if (children->thisBoard[1] == buf32_1 &&
 							children->thisBoard[3] == buf32 &&
-							children->thisBoard[0] == active->thisBoard[0] &&
-							children->thisBoard[2] == active->thisBoard[2] &&
-							children->thisActive != 0) {
-							active->childrens.push_back(children);
+							children->thisBoard[0] == element->thisBoard[0] &&
+							children->thisBoard[2] == element->thisBoard[2] &&
+							children->thisAct != 0) {
+							element->childrens.push_back(children);
 							break;
 						}
 						children = children->next;
 					}
 					if (children->next == NULL && children->thisBoard[1] == buf32_1 &&
 						children->thisBoard[3] == buf32 &&
-						children->thisBoard[0] == active->thisBoard[0] &&
-						children->thisBoard[2] == active->thisBoard[2] &&
-						children->thisActive != 0) {
-						active->childrens.push_back(children);
+						children->thisBoard[0] == element->thisBoard[0] &&
+						children->thisBoard[2] == element->thisBoard[2] &&
+						children->thisAct != 0) {
+						element->childrens.push_back(children);
 					}
 					else {
-						children->next = cache[last & HASHNUM] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						cache[last & HASHNUM]->thisBoard[0] = active->thisBoard[0];
-						cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-						cache[last & HASHNUM]->thisBoard[1] = buf32_1;
-						cache[last & HASHNUM]->thisBoard[3] = buf32;
-						last++;
+						children = children->next = new Node();
+						element->childrens.push_back(children);
+						children->thisBoard[0] = element->thisBoard[0];
+						children->thisBoard[2] = element->thisBoard[2];
+						children->thisBoard[1] = buf32_1;
+						children->thisBoard[3] = buf32;
 					}
 				}
 				else {
-					cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-					deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-					active->childrens.push_back(cache[last&HASHNUM]);
-					cache[last & HASHNUM]->thisBoard[0] = active->thisBoard[0];
-					cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-					cache[last & HASHNUM]->thisBoard[1] = (active->thisBoard[1] | buf) & ~(buf << 1);
-					cache[last & HASHNUM]->thisBoard[3] = (singles | buf) & ~(buf << 1);
-					last++;
+					hashTable[hashNum] = new Node();
+					element->childrens.push_back(hashTable[hashNum]);
+					hashTable[hashNum]->thisBoard[0] = element->thisBoard[0];
+					hashTable[hashNum]->thisBoard[2] = element->thisBoard[2];
+					hashTable[hashNum]->thisBoard[1] = (element->thisBoard[1] | buf) & ~(buf << 1);
+					hashTable[hashNum]->thisBoard[3] = (singles | buf) & ~(buf << 1);
 				}
 				tryRightDown &= tryRightDown - 1;
 			}
@@ -1111,47 +1030,43 @@ void getTurn() {
 					n = __lzcnt(buf);
 					hashNum = phash ^ tableZobrist[n][1] ^ tableZobrist[n > 6 ? n - 7 : n + 25][3];
 					if (hashTable[hashNum] != NULL) {
-						buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
+						buf32_1 = (element->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
 						buf32 = (singles) & ~(buf << 7 | buf >> 25);
 						children = hashTable[hashNum];
 						while (children->next != NULL) {
 							if (children->thisBoard[1] == buf32_1 &&
 								children->thisBoard[3] == buf32 &&
-								children->thisBoard[0] == active->thisBoard[0] &&
-								children->thisBoard[2] == active->thisBoard[2] &&
-								children->thisActive != 0) {
-								active->childrens.push_back(children);
+								children->thisBoard[0] == element->thisBoard[0] &&
+								children->thisBoard[2] == element->thisBoard[2] &&
+								children->thisAct != 0) {
+								element->childrens.push_back(children);
 								break;
 							}
 							children = children->next;
 						}
 						if (children->next == NULL && children->thisBoard[1] == buf32_1 &&
 							children->thisBoard[3] == buf32 &&
-							children->thisBoard[0] == active->thisBoard[0] &&
-							children->thisBoard[2] == active->thisBoard[2] &&
-							children->thisActive != 0) {
-							active->childrens.push_back(children);
+							children->thisBoard[0] == element->thisBoard[0] &&
+							children->thisBoard[2] == element->thisBoard[2] &&
+							children->thisAct != 0) {
+							element->childrens.push_back(children);
 						}
 						else {
-							children->next = cache[last & HASHNUM] = new Node();
-							deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-							active->childrens.push_back(cache[last&HASHNUM]);
-							cache[last & HASHNUM]->thisBoard[0] = active->thisBoard[0];
-							cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-							cache[last & HASHNUM]->thisBoard[1] = buf32_1;
-							cache[last & HASHNUM]->thisBoard[3] = buf32;
-							last++;
+							children = children->next = new Node();
+							element->childrens.push_back(children);
+							children->thisBoard[0] = element->thisBoard[0];
+							children->thisBoard[2] = element->thisBoard[2];
+							children->thisBoard[1] = buf32_1;
+							children->thisBoard[3] = buf32;
 						}
 					}
 					else {
-						cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						cache[last & HASHNUM]->thisBoard[0] = active->thisBoard[0];
-						cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-						cache[last & HASHNUM]->thisBoard[1] = (active->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
-						cache[last & HASHNUM]->thisBoard[3] = (singles) & ~(buf << 7 | buf >> 25);
-						last++;
+						hashTable[hashNum] = new Node();
+						element->childrens.push_back(hashTable[hashNum]);
+						hashTable[hashNum]->thisBoard[0] = element->thisBoard[0];
+						hashTable[hashNum]->thisBoard[2] = element->thisBoard[2];
+						hashTable[hashNum]->thisBoard[1] = (element->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
+						hashTable[hashNum]->thisBoard[3] = (singles) & ~(buf << 7 | buf >> 25);
 					}
 					tryLeftDownQueen &= tryLeftDownQueen - 1;
 				} while (tryLeftDownQueen);
@@ -1162,119 +1077,133 @@ void getTurn() {
 				n = __lzcnt(buf);
 				hashNum = phash ^ tableZobrist[n][3] ^ tableZobrist[n > 6 ? n - 7 : n + 25][3];
 				if (hashTable[hashNum] != NULL) {
-					buf32_1 = (active->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
+					buf32_1 = (element->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
 					buf32 = (singles | buf) & ~(buf << 7 | buf >> 25);
 					children = hashTable[hashNum];
 					while (children->next != NULL) {
 						if (children->thisBoard[1] == buf32_1 &&
 							children->thisBoard[3] == buf32 &&
-							children->thisBoard[0] == active->thisBoard[0] &&
-							children->thisBoard[2] == active->thisBoard[2] &&
-							children->thisActive != 0) {
-							active->childrens.push_back(children);
+							children->thisBoard[0] == element->thisBoard[0] &&
+							children->thisBoard[2] == element->thisBoard[2] &&
+							children->thisAct != 0) {
+							element->childrens.push_back(children);
 							break;
 						}
 						children = children->next;
 					}
 					if (children->next == NULL && children->thisBoard[1] == buf32_1 &&
 						children->thisBoard[3] == buf32 &&
-						children->thisBoard[0] == active->thisBoard[0] &&
-						children->thisBoard[2] == active->thisBoard[2] &&
-						children->thisActive != 0) {
-						active->childrens.push_back(children);
+						children->thisBoard[0] == element->thisBoard[0] &&
+						children->thisBoard[2] == element->thisBoard[2] &&
+						children->thisAct != 0) {
+						element->childrens.push_back(children);
 					}
 					else {
-						children->next = cache[last & HASHNUM] = new Node();
-						deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-						active->childrens.push_back(cache[last&HASHNUM]);
-						cache[last & HASHNUM]->thisBoard[0] = active->thisBoard[0];
-						cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-						cache[last & HASHNUM]->thisBoard[1] = buf32_1;
-						cache[last & HASHNUM]->thisBoard[3] = buf32;
-						last++;
+						children = children->next = new Node();
+						element->childrens.push_back(children);
+						children->thisBoard[0] = element->thisBoard[0];
+						children->thisBoard[2] = element->thisBoard[2];
+						children->thisBoard[1] = buf32_1;
+						children->thisBoard[3] = buf32;
 					}
 				}
 				else {
-					cache[last & HASHNUM] = hashTable[hashNum] = new Node();
-					deep[last & HASHNUM] = deep[first & HASHNUM] + 1;
-					active->childrens.push_back(cache[last&HASHNUM]);
-					cache[last & HASHNUM]->thisBoard[0] = active->thisBoard[0];
-					cache[last & HASHNUM]->thisBoard[2] = active->thisBoard[2];
-					cache[last & HASHNUM]->thisBoard[1] = (active->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
-					cache[last & HASHNUM]->thisBoard[3] = (singles | buf) & ~(buf << 7 | buf >> 25);
-					last++;
+					hashTable[hashNum] = new Node();
+					element->childrens.push_back(hashTable[hashNum]);
+					hashTable[hashNum]->thisBoard[0] = element->thisBoard[0];
+					hashTable[hashNum]->thisBoard[2] = element->thisBoard[2];
+					hashTable[hashNum]->thisBoard[1] = (element->thisBoard[1] | buf) & ~(buf << 7 | buf >> 25);
+					hashTable[hashNum]->thisBoard[3] = (singles | buf) & ~(buf << 7 | buf >> 25);
 				}
 				tryLeftDown &= tryLeftDown - 1;
 			}
 		}
 		if (!isQueenTurn) { //нельзя походить
-			cache[first & HASHNUM] = NULL;
+			element->isTerminal = true;
 		}
 	}
-	first++;
 }
 
-char getmax(Node* element);
-
-char getmin(Node* element) {
-	if (element == NULL) {
-		return -127;
-	}
-	if (element->childrens.size() > 0) {
-		char min = 127, cmin;
-		for (num i = 0; i < element->childrens.size(); i++) {
-			cmin = getmax(element->childrens[i]);
-			if (cmin < min)
-				min = cmin;
-		}
-		return min;
-	}
-	else
+float canChop(Node* element, float alpha, float beta) {
+	if (element->childrens.size() || !getChop(element)) {
 		return element->getvalue();
+	}
+	else {
+		float value;
+		if (element->thisAct) {
+			for (uchar i = 0; i < element->childrens.size(); i++) {
+				value = canChop(element->childrens[i], alpha, beta);
+				alpha = alpha > value ? alpha : value;
+				if (beta <= alpha) {
+					return alpha;
+				}
+			}
+			return alpha;
+		}
+		else {
+			for (uchar i = 0; i < element->childrens.size(); i++) {
+				value = canChop(element->childrens[i], alpha, beta);
+				beta = beta < value ? beta : value;
+				if (beta <= alpha) {
+					return beta;
+				}
+			}
+			return beta;
+		}
+	}
 }
 
-char getmax(Node* element) {
-	if (element == NULL) {
-		return 127;
+float alphabeta(Node* element, uchar depth, float alpha, float beta) {
+	if (depth == 0) {
+		return canChop(element, alpha, beta);
 	}
-	if (element->childrens.size() > 0) {
-		char max = -127, cmax;
-		for (num i = 0; i < element->childrens.size(); i++) {
-			cmax = getmin(element->childrens[i]);
-			if (cmax > max)
-				max = cmax;
+	if (element->childrens.size() == 0) {
+		getTurn(element);
+	}
+	if (element->isTerminal) {
+		return element->thisAct ? -1 : 1;
+	}
+	float value;
+	if (element->thisAct) {
+		for (uchar i = 0; i < element->childrens.size(); i++) {
+			value = alphabeta(element->childrens[i], depth - 1, alpha, beta);
+			alpha = alpha > value ? alpha : value;
+			if (beta <= alpha) {
+				return alpha;
+			}
 		}
-		return max;
+		return alpha;
 	}
-	else
-		return element->getvalue();
+	else {
+		for (uchar i = 0; i < element->childrens.size(); i++) {
+			value = alphabeta(element->childrens[i], depth - 1, alpha, beta);
+			beta = beta < value ? beta : value;
+			if (beta <= alpha) {
+				return beta;
+			}
+		}
+		return beta;
+	}
 }
 
 void getvariant(uchar theact, board b0, board b1, board b2, board b3) {
-	memset(cache, NULL, buffersize);
 	memset(hashTable, NULL, buffersize);
-	memset(deep, 0, buffersize);
 	act = theact;
-	first = 0;
-	last = 1;
-	cache[0] = new Node(b0, b1, b2, b3);
-	while (deep[first & HASHNUM] <= 8) {
-		getTurn();
-	}
-	while (last > first) {
-		getChop(true);
-	}
-	Node* maxNode = cache[0];
-	char max = -127, cmax;
-	for (num i = 0; i < cache[0]->childrens.size(); i++) {
-		cmax = getmin(cache[0]->childrens[i]);
-		if (max < cmax) {
-			max = cmax;
-			maxNode = cache[0]->childrens[i];
+	Node* element = new Node(b0, b1, b2, b3);
+	getTurn(element);
+	Node* maxNode = element->childrens[0];
+	const char deep = 12;
+	if (element->childrens.size() > 1) {
+		float current, max = alphabeta(element->childrens[0], deep, -1, 1);
+		for (uchar i = 1; i < element->childrens.size(); i++) {
+			current = alphabeta(element->childrens[i], deep, max, 1);
+			if (current > max) {
+				max = current;
+				maxNode = element->childrens[i];
+			}
 		}
 	}
-	cout << "Content-Type: text/html\n\n";
-	cout << (maxNode->thisBoard[0]) << " " << (maxNode->thisBoard[1]) << " " << (maxNode->thisBoard[2]) << " " << (maxNode->thisBoard[3]) << endl;
+	printNode(maxNode);
 }
 
 int main() {
